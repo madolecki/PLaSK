@@ -19,6 +19,8 @@ from ...qt.QtWidgets import *
 from ..config import CONFIG, dark_style
 from ..widgets import EDITOR_FONT, set_icon_size
 
+from .debugger import DebuggerPanel
+
 
 def update_textedit():
     global \
@@ -45,6 +47,7 @@ class TextEditor(QPlainTextEdit):
 
     def __init__(self, parent=None, line_numbers=True):
         super().__init__(parent)
+        self.debug_lines = set()
         palette = self.palette()
         palette.setColor(
             QPalette.ColorRole.Base, QColor(CONFIG["editor/background_color"])
@@ -68,6 +71,8 @@ class TextEditor(QPlainTextEdit):
         self.selections = []
         self._changed_pos = 0
         self.textChanged.connect(self.on_text_change)
+        # TEMP: Set highlited lines for testing
+        self.highlight_debug_lines([12, 27, 54])
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -76,6 +81,11 @@ class TextEditor(QPlainTextEdit):
             self.line_numbers.setGeometry(
                 QRect(cr.left(), cr.top(), self.line_numbers.get_width(), cr.height())
             )
+
+    def highlight_debug_lines(self, lines):
+        self.debug_lines = set(lines)
+        self.update_selections()
+
 
     def insertFromMimeData(self, source):
         if source.hasText() and SELECT_AFTER_PASTE:
@@ -91,6 +101,33 @@ class TextEditor(QPlainTextEdit):
 
     def on_text_change(self):
         self._changed_pos = self.textCursor().position()
+
+    def get_debugger_selections(self):
+        """Generate highlight selections for debugger-indicated lines"""
+        if not self.debug_lines:
+            return []
+
+        doc = self.document()
+        fm = self.fontMetrics()
+        selections = []
+
+        for line_no in self.debug_lines:
+            block = doc.findBlockByNumber(line_no - 1)
+            if not block.isValid():
+                continue
+            cursor = QTextCursor(block)
+
+            sel = QTextEdit.ExtraSelection()
+            sel.cursor = cursor
+            sel.cursor.clearSelection()
+
+            # color for debugger highlighted line (customize as you want)
+            sel.format.setBackground(QColor("#4444aa80"))  # translucent blue
+            sel.format.setProperty(QTextFormat.FullWidthSelection, True)
+
+            selections.append(sel)
+
+        return selections
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -149,6 +186,7 @@ class TextEditor(QPlainTextEdit):
         self.setExtraSelections(
             self.highlight_current_line()
             + self.get_same_as_selected()
+            + self.get_debugger_selections()
             + self.selections
         )
 
@@ -445,6 +483,8 @@ class EditorWidget(QWidget):
 
         self.editor = editor_class(self, *args, **kwargs)
 
+        self.debugger = DebuggerPanel(self.window())
+
         self.toolbar = QToolBar(self)
         self.toolbar.setStyleSheet("QToolBar { border: 0px }")
         set_icon_size(self.toolbar)
@@ -460,6 +500,8 @@ class EditorWidget(QWidget):
         self.add_action(
             "&Replace...", "edit-find-replace", "editor_replace", self.show_replace
         )
+        self.toolbar.addSeparator()
+        self.add_action("&Open debugger", "debugger-open", None, self.debugger.toggle_visibility)
 
         self.statusbar = QStatusBar(self)
         self.statusbar.setSizeGripEnabled(False)
