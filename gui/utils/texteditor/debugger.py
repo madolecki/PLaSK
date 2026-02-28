@@ -1,10 +1,10 @@
 
-# TODO: Change those imports to the plask qt libs
-from PySide6.QtWidgets import (
+from ...qt.QtWidgets import (
     QDockWidget, QListWidget, QVBoxLayout, QWidget,
     QPushButton, QHBoxLayout, QLineEdit, QLabel
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from ...qt.QtCore import Qt, QThread
+from ...qt import QtSignal
 import socket
 import json
 import struct
@@ -12,14 +12,14 @@ import time
 
 
 class PersistentSocketThread(QThread):
-    vars_received = Signal(dict)
-    connected_ok = Signal()
-    error = Signal(str)
-    closed = Signal()
+    vars_received = QtSignal(dict)
+    connected_ok = QtSignal()
+    error = QtSignal(str)
+    closed = QtSignal()
 
-    stack_received = Signal(list)
+    stack_received = QtSignal(list)
 
-    send_command_signal = Signal(bytes)
+    send_command_signal = QtSignal(bytes)
 
     def __init__(self, host, port):
         super().__init__()
@@ -111,10 +111,10 @@ class PersistentSocketThread(QThread):
 
 
 class DebuggerPanel(QDockWidget):
-    current_line_signal = Signal(int)
+    current_line_signal = QtSignal(int)
 
-    ask_breakpoints = Signal()
-    received_breakpoints = Signal(set)
+    ask_breakpoints = QtSignal()
+    received_breakpoints = QtSignal(set)
     def __init__(self, window_parent):
         super().__init__("Debugger", window_parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
@@ -181,6 +181,10 @@ class DebuggerPanel(QDockWidget):
 
         self.breakpoints = set()
 
+    def get_breakpoint_lines(self):
+        self.request_breakpoints()
+        return self.breakpoints
+
     def request_breakpoints(self):
         self.ask_breakpoints.emit()
 
@@ -192,8 +196,6 @@ class DebuggerPanel(QDockWidget):
 
     def connect_debugger(self):
         host = self.host_input.text().strip()
-        self.request_breakpoints()
-        print(self.breakpoints)
         try:
             port = int(self.port_input.text())
         except ValueError:

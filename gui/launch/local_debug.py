@@ -27,16 +27,15 @@ from ..utils.files import which
 
 class LaunchThread(QThread):
 
-    def __init__(self, program, fname, dirname, dock, main_window, args, defs, port, debugger):
+    def __init__(self, program, fname, dirname, dock, main_window, args, defs, port, debugger_path, breakpoints):
         super().__init__()
         self.main_window = main_window
         env = os.environ.copy()
         if CONFIG['workarounds/disable_omp']:
             env['OMP_NUM_THREADS'] = '1'
         env['PYTHONIOENCODING'] = self.main_window.document.coding
-
-        breakpoints = [fname + ':3', fname + ':7', fname+':15', fname+'28'] # temporary for texting
-        debugger_path = debugger 
+        
+        breakpoints = [f"{fname}:" + str(bp) for bp in breakpoints]
 
         try:
             si = subprocess.STARTUPINFO()
@@ -97,19 +96,11 @@ def find_free_port():
 
 class Launcher(QObject):
     name = "Local Process (Debugger)"
-    requets_breakpoints = Signal()
-    recieved_breakpoints = Signal(set)
-    debuggerRequested = Signal(int)  # dbg_port
 
     def __init__(self):
         self.dirname = None
         self.port = find_free_port()
         self.debugger_path = ""
-        self.dbg_breakpoints = []
-
-    def get_breakpoints(self):
-        self.requets_breakpoints.emit()
-
 
     def widget(self, main_window, parent=None):
         widget = QWidget(parent)
@@ -222,7 +213,7 @@ class Launcher(QObject):
     def recieve_breakpoints(self, bp):
         self.dbg_breakpoints = bp
 
-    def launch(self, main_window, args, defs):
+    def launch(self, main_window, args, defs, debugger=None):
         self.port = int(self.port_edit.text())
         self.debugger_path = self.debugger_edit.text()
 
@@ -281,12 +272,14 @@ class Launcher(QObject):
             args,
             defs,
             port=self.port,
-            debugger=self.debugger_path,
+            debugger_path=self.debugger_path,
+            breakpoints=debugger.get_breakpoint_lines()
         )
 
         dock.thread.finished.connect(dock.thread_finished)
         dock.thread.start()
-        # self.debuggerRequested.emit(self.port)
+        
+        debugger.show()
 
     def select_workdir(self, filename):
         if self.dirname:
