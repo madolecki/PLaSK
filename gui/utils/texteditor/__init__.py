@@ -45,6 +45,8 @@ update_textedit()
 class TextEditor(QPlainTextEdit):
     """Improved editor with line numbers and some other neat stuff"""
 
+    breakpoints_ready = Signal(set)
+
     def __init__(self, parent=None, line_numbers=True):
         super().__init__(parent)
         self.debug_lines = set()
@@ -71,8 +73,6 @@ class TextEditor(QPlainTextEdit):
         self.selections = []
         self._changed_pos = 0
         self.textChanged.connect(self.on_text_change)
-        # TEMP: Set highlited lines for testing
-        self.highlight_debug_lines([12, 27, 54])
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -82,10 +82,9 @@ class TextEditor(QPlainTextEdit):
                 QRect(cr.left(), cr.top(), self.line_numbers.get_width(), cr.height())
             )
 
-    def highlight_debug_lines(self, lines):
-        self.debug_lines = set(lines)
+    def update_current_debug_line(self, line):
+        self.debug_lines = set([line])
         self.update_selections()
-
 
     def insertFromMimeData(self, source):
         if source.hasText() and SELECT_AFTER_PASTE:
@@ -103,7 +102,6 @@ class TextEditor(QPlainTextEdit):
         self._changed_pos = self.textCursor().position()
 
     def get_debugger_selections(self):
-        """Generate highlight selections for debugger-indicated lines"""
         if not self.debug_lines:
             return []
 
@@ -121,13 +119,15 @@ class TextEditor(QPlainTextEdit):
             sel.cursor = cursor
             sel.cursor.clearSelection()
 
-            # color for debugger highlighted line (customize as you want)
-            sel.format.setBackground(QColor("#4444aa80"))  # translucent blue
+            sel.format.setBackground(QColor("#4444aa80"))
             sel.format.setProperty(QTextFormat.FullWidthSelection, True)
 
             selections.append(sel)
 
         return selections
+
+    def send_breakpoints(self):
+         self.breakpoints_ready.emit(self.line_numbers.get_breakpoints())
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -484,6 +484,10 @@ class EditorWidget(QWidget):
         self.editor = editor_class(self, *args, **kwargs)
 
         self.debugger = DebuggerPanel(self.window())
+        
+        self.debugger.ask_breakpoints.connect(self.editor.send_breakpoints)
+        self.editor.breakpoints_ready.connect(self.debugger.recieve_breakpoints)
+        self.debugger.current_line_signal.connect(self.editor.update_current_debug_line)
 
         self.toolbar = QToolBar(self)
         self.toolbar.setStyleSheet("QToolBar { border: 0px }")
