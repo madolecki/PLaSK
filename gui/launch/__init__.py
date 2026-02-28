@@ -27,6 +27,7 @@ from ..utils import system
 from ..lib.highlighter import Format
 
 from .local import Launcher as LocalLauncher
+from .local_debug import Launcher as LocalLauncherDbg
 from .console import Launcher as ConsoleLauncher
 
 LAUNCH_CONFIG = {}
@@ -34,6 +35,7 @@ LAUNCH_CONFIG = {}
 _DEFS_VISIBLE = False
 
 LAUNCHERS = {
+    'local_dbg': LocalLauncherDbg(),
     'local': LocalLauncher(),
     'console': ConsoleLauncher()
 }
