@@ -30,7 +30,7 @@ class Debugger(bdb.Bdb):
     def _frame_info(self, frame):
         return {
             "function": frame.f_code.co_name,
-            "file": frame.f_code.co_filename,
+            "file": os.path.relpath(frame.f_code.co_filename),
             "line": frame.f_lineno,
         }
 
