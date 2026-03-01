@@ -1,14 +1,12 @@
-
-from ...qt.QtWidgets import (
-    QDockWidget, QListWidget, QVBoxLayout, QWidget,
-    QPushButton, QHBoxLayout, QLineEdit, QLabel
-)
+from ...qt.QtWidgets import *
 from ...qt.QtCore import Qt, QThread
 from ...qt import QtSignal
+from ...qt.QtGui import QColor
 import socket
 import json
 import struct
 import time
+from datetime import datetime
 
 
 class PersistentSocketThread(QThread):
@@ -153,8 +151,10 @@ class DebuggerPanel(QDockWidget):
         button_layout.addWidget(self.next_line_button)
         button_layout.addWidget(self.stop_button)
 
-        # --- Panel for locals/variables ---
-        self.panel_widget = QListWidget()
+        # --- Panel for Variables ---
+        self.panel_widget = QTreeWidget()
+        self.panel_widget.setHeaderLabels(["Variable", "Value"])
+        self.panel_widget.setColumnWidth(0, 200)  # adjust for variable names
 
         # --- Panel for Call Stack ---
         self.call_stack_widget = QListWidget()
@@ -181,6 +181,22 @@ class DebuggerPanel(QDockWidget):
 
         self.breakpoints = set()
 
+    def add_panel_message(self, panel, text, msg_type="info"):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        item = QTreeWidgetItem([timestamp, text])
+        
+        color_map = {
+            "error": QColor("red"),
+            "warn": QColor("orange"),
+            "info": QColor("blue"),
+            "debug": QColor("gray")
+        }
+        color = color_map.get(msg_type, QColor("black"))
+        item.setForeground(1, color)
+        
+        panel.addTopLevelItem(item)
+        panel.scrollToItem(item)
+
     def get_breakpoint_lines(self):
         self.request_breakpoints()
         return self.breakpoints
@@ -199,14 +215,14 @@ class DebuggerPanel(QDockWidget):
         try:
             port = int(self.port_input.text())
         except ValueError:
-            self.panel_widget.addItem("Error: Port must be an integer.")
+            self.add_panel_message(self.panel_widget, "Port must be an integer", "error")
             return
 
         if self.socket_thread:
-            self.panel_widget.addItem("Already connected.")
+            self.add_panel_message(self.panel_widget, "Already connected.", "info")
             return
 
-        self.panel_widget.addItem("Connecting...")
+        self.add_panel_message(self.panel_widget, "Connecting...", "info")
 
         self.socket_thread = PersistentSocketThread(host, port)
         self.socket_thread.connected_ok.connect(self.on_connected)
@@ -220,7 +236,7 @@ class DebuggerPanel(QDockWidget):
         if self.socket_thread and self.socket_thread.connected:
             self.socket_thread.send_command_signal.emit(cmd)
         else:
-            self.panel_widget.addItem("Not connected.")
+            self.add_panel_message(self.panel_widget, "Not connected", "warn")
 
     def stop_debugger(self):
         if self.socket_thread:
@@ -228,16 +244,102 @@ class DebuggerPanel(QDockWidget):
             self.socket_thread.stop()
 
     def on_connected(self):
-        self.panel_widget.addItem("Connected to debugger.")
+        self.panel_widget.clear()
+        self.add_panel_message(self.panel_widget, "Connected to debugger.", "info")
         self.next_break_button.setEnabled(True)
         self.next_line_button.setEnabled(True)
         self.stop_button.setEnabled(True)
 
+    def add_variable_item(self, parent, name, value, max_str_len=100, max_items=50):
+        # Truncate long strings for display
+        display_value = value
+        if isinstance(value, str) and len(value) > max_str_len:
+            display_value = value[:max_str_len] + "... (truncated)"
+        
+        # Create the current tree item
+        if isinstance(value, dict):
+            item = QTreeWidgetItem([str(name), f"dict ({len(value)})"])
+            item.setToolTip(1, str(value))
+            item.setForeground(1, QColor("darkGreen"))
+            # Add children for each key/value
+            for i, key in enumerate(sorted(value.keys())):
+                if i >= max_items:
+                    QTreeWidgetItem(item, [f"... ({len(value)-max_items} more items)", ""])
+                    break
+                self.add_variable_item(item, key, value[key], max_str_len, max_items)
+
+        elif isinstance(value, (list, tuple, set)):
+            type_name = type(value).__name__
+            item = QTreeWidgetItem([str(name), f"{type_name} ({len(value)})"])
+            item.setToolTip(1, str(value))
+            item.setForeground(1, QColor("darkBlue"))
+            # Add children for each element
+            for i, v in enumerate(value):
+                if i >= max_items:
+                    QTreeWidgetItem(item, [f"... ({len(value)-max_items} more)", ""])
+                    break
+                self.add_variable_item(item, f"[{i}]", v, max_str_len, max_items)
+
+        else:
+            # Simple value
+            item = QTreeWidgetItem([str(name), repr(display_value)])
+            item.setToolTip(1, str(value))
+            # Color coding
+            if isinstance(value, (int, float, complex)):
+                item.setForeground(1, QColor("blue"))
+            elif isinstance(value, str):
+                item.setForeground(1, QColor("darkRed"))
+            elif isinstance(value, bool):
+                item.setForeground(1, QColor("darkMagenta"))
+            elif value is None:
+                item.setForeground(1, QColor("gray"))
+
+        # Add to parent
+        if isinstance(parent, QTreeWidget):
+            parent.addTopLevelItem(item)
+        else:
+            parent.addChild(item)
+
+        # Optionally expand top-level items
+        if isinstance(parent, QTreeWidget):
+            item.setExpanded(True)
+
+    def format_var(self, name, value, indent=0, max_str_len=100, max_items=10):
+            spacer = "  " * indent
+
+            # Truncate long strings
+            if isinstance(value, str) and len(value) > max_str_len:
+                value = value[:max_str_len] + "... (truncated)"
+
+            # Limit length of containers
+            if isinstance(value, dict):
+                lines = [f"{spacer}{name}: dict{{"]
+                for i, k in enumerate(sorted(value.keys())):
+                    if i >= max_items:
+                        lines.append(f"{spacer}  ... ({len(value) - max_items} more items)")
+                        break
+                    lines.append(self.format_var(k, value[k], indent + 1))
+                lines.append(f"{spacer}}}")
+                return "\n".join(lines)
+            elif isinstance(value, (list, tuple, set)):
+                type_name = type(value).__name__
+                lines = [f"{spacer}{name}: {type_name}["]
+                for i, v in enumerate(value):
+                    if i >= max_items:
+                        lines.append(f"{spacer}  ... ({len(value) - max_items} more items)")
+                        break
+                    lines.append(self.format_var(f"[{i}]", v, indent + 1))
+                lines.append(f"{spacer}]")
+                return "\n".join(lines)
+            else:
+                return f"{spacer}{name}: {repr(value)}"
+
     def update_vars(self, vars_data):
         self.panel_widget.clear()
-        for key, value in vars_data.get("locals", {}).items():
-            pretty = json.dumps(value, indent=2)
-            self.panel_widget.addItem(f"{key}:\n{pretty}")
+        locals_dict = vars_data.get("locals", {})
+        for key, value in locals_dict.items():
+            self.add_variable_item(self.panel_widget, key, value)
+
         line = int(vars_data["line"])
         self.current_line_signal.emit(line)
 
@@ -247,13 +349,17 @@ class DebuggerPanel(QDockWidget):
             func = frame.get("function", "?")
             file = frame.get("file", "?")
             line = frame.get("line", "?")
-            self.call_stack_widget.addItem(f"{func} @ {file}:{line}")
+            # Shorten file path
+            parts = file.replace("\\", "/").split("/")
+            short_file = "/".join(parts[-3:]) if len(parts) > 3 else file
+            self.call_stack_widget.addItem(f"{func} @ {short_file}:{line}")
 
     def show_error(self, msg):
-        self.panel_widget.addItem(f"Error: {msg}")
+        self.add_panel_message(self.panel_widget, msg, "error")
 
     def on_closed(self):
-        self.panel_widget.addItem("Debugger connection closed.")
+        self.panel_widget.clear()
+        self.add_panel_message(self.panel_widget, "Debugger connection closed.", "info")
         self.next_break_button.setEnabled(False)
         self.next_line_button.setEnabled(False)
         self.stop_button.setEnabled(False)
