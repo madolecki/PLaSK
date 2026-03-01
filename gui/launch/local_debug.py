@@ -35,7 +35,7 @@ class LaunchThread(QThread):
             env['OMP_NUM_THREADS'] = '1'
         env['PYTHONIOENCODING'] = self.main_window.document.coding
         
-        breakpoints = [f"{fname}:" + str(bp) for bp in breakpoints]
+        breakpoints = ",".join([f"{fname}:" + str(bp) for bp in breakpoints])
 
         try:
             si = subprocess.STARTUPINFO()
@@ -43,7 +43,7 @@ class LaunchThread(QThread):
             si.wShowWindow = subprocess.SW_HIDE
         except AttributeError:
             self.proc = subprocess.Popen(
-                [sys.executable, debugger_path, fname] + breakpoints + ["--port", str(port), "--work_dir", dirname],
+                [sys.executable, debugger_path, fname] + [breakpoints, "--port", str(port), "--work_dir", dirname],
                 cwd=dirname,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
