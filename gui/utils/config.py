@@ -110,6 +110,8 @@ DEFAULTS = {
     'launcher_local/color_8': '#555753',
     'launcher_local/color_9': '#a40000',
     'launcher_local/font': [_default_font_family, '10', '-1', '5', '50', '0', '0', '0', '0', '0'],
+    'launcher_debug/port': 5000,
+    'launcher_debug/debugger_path': '/lib/plask/python/debugger.py',
     'main_window/dark_style': False,
     'main_window/icons_size': 'default',
     'main_window/icons_theme': 'Breeze',

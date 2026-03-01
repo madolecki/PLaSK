@@ -2,6 +2,7 @@ from ...qt.QtWidgets import *
 from ...qt.QtCore import Qt, QThread
 from ...qt import QtSignal
 from ...qt.QtGui import QColor
+from ...utils.config import CONFIG
 import socket
 import json
 import struct
@@ -33,15 +34,23 @@ class PersistentSocketThread(QThread):
     def enqueue_command(self, cmd: bytes):
         self.send_queue.append(cmd)
 
-    def connect_socket(self):
-        try:
-            self.socket = socket.create_connection((self.host, self.port), timeout=3)
-            self.socket.settimeout(0.25)
-            self.connected = True
-            self.connected_ok.emit()
-        except Exception as e:
-            self.error.emit(f"Connection failed: {e}")
-            self.connected = False
+    def connect_socket(self, retries=5, delay=0.5):
+        attempt = 0
+        while attempt < retries and self.running:
+            try:
+                self.socket = socket.create_connection((self.host, self.port), timeout=3)
+                self.socket.settimeout(0.25)
+                self.connected = True
+                self.connected_ok.emit()
+                return
+            except Exception as e:
+                attempt += 1
+                if attempt < retries:
+                    time.sleep(delay)
+                else:
+                    self.error.emit(f"Connection failed after {retries} attempts: {e}")
+                    self.connected = False
+                    return
 
     def run(self):
         self.connect_socket()
@@ -123,7 +132,7 @@ class DebuggerPanel(QDockWidget):
         # --- Connection Config ---
         config_layout = QHBoxLayout()
         self.host_input = QLineEdit("127.0.0.1")
-        self.port_input = QLineEdit("5000")
+        self.port_input = QLineEdit(str(CONFIG['launcher_debug/port']))
         config_layout.addWidget(QLabel("Host:"))
         config_layout.addWidget(self.host_input)
         config_layout.addWidget(QLabel("Port:"))

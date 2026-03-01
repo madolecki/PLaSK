@@ -27,7 +27,7 @@ from ..utils.files import which
 
 class LaunchThread(QThread):
 
-    def __init__(self, program, fname, dirname, dock, main_window, args, defs, port, debugger_path, breakpoints):
+    def __init__(self, program, fname, dirname, dock, main_window, args, defs, breakpoints):
         super().__init__()
         self.main_window = main_window
         env = os.environ.copy()
@@ -36,6 +36,8 @@ class LaunchThread(QThread):
         env['PYTHONIOENCODING'] = self.main_window.document.coding
         
         breakpoints = ",".join([f"{fname}:" + str(bp) for bp in breakpoints])
+        port = CONFIG['launcher_debug/port']
+        debugger_path = CONFIG['launcher_debug/debugger_path']
 
         try:
             si = subprocess.STARTUPINFO()
@@ -87,20 +89,11 @@ class LaunchThread(QThread):
         except OSError:
             pass
 
-def find_free_port():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("", 0))          # Let OS choose a free port
-    port = s.getsockname()[1]
-    s.close()
-    return port
-
 class Launcher(QObject):
     name = "Local Process (Debugger)"
 
     def __init__(self):
         self.dirname = None
-        self.port = find_free_port()
-        self.debugger_path = ""
 
     def widget(self, main_window, parent=None):
         widget = QWidget(parent)
@@ -138,27 +131,6 @@ class Launcher(QObject):
         dirlayout.addWidget(self.diredit)
         dirlayout.addWidget(dirbutton)
         layout.addLayout(dirlayout)
-
-        layout.addWidget(QLabel("Debugger port:"))
-
-        self.port_edit = QLineEdit()
-        self.port_edit.setValidator(QIntValidator(1, 65535))
-        self.port_edit.setText(str(self.port))
-        layout.addWidget(self.port_edit)
-
-        layout.addWidget(QLabel("Debugger executable:"))
-
-        dbg_layout = QHBoxLayout()
-        self.debugger_edit = QLineEdit()
-        self.debugger_edit.setText(self.debugger_path)
-
-        dbg_button = QPushButton()
-        dbg_button.setIcon(QIcon.fromTheme("folder-open"))
-        dbg_button.pressed.connect(self.select_debugger)
-
-        dbg_layout.addWidget(self.debugger_edit)
-        dbg_layout.addWidget(dbg_button)
-        layout.addLayout(dbg_layout)
 
         layout.addWidget(QLabel("Visible Log levels:"))
 
@@ -214,9 +186,6 @@ class Launcher(QObject):
         self.dbg_breakpoints = bp
 
     def launch(self, main_window, args, defs, debugger=None):
-        self.port = int(self.port_edit.text())
-        self.debugger_path = self.debugger_edit.text()
-
         program = CONFIG['launcher_local/program']
         if not (program and os.path.isfile(program) and os.access(program, os.X_OK)):
             program = 'plask'
@@ -271,8 +240,6 @@ class Launcher(QObject):
             main_window,
             args,
             defs,
-            port=self.port,
-            debugger_path=self.debugger_path,
             breakpoints=debugger.get_breakpoint_lines()
         )
 
@@ -280,6 +247,7 @@ class Launcher(QObject):
         dock.thread.start()
         
         debugger.show()
+        debugger.connect_debugger()
 
     def select_workdir(self, filename):
         if self.dirname:
@@ -291,14 +259,3 @@ class Launcher(QObject):
         if dirname:
             self.dirname = dirname
             self.diredit.setText(dirname)
-
-    def select_debugger(self):
-        path, _ = QFileDialog.getOpenFileName(
-            None,
-            "Select debugger executable",
-            "",
-            "Executables (*)"
-        )
-        if path:
-            self.debugger_path = path
-            self.debugger_edit.setText(path)
