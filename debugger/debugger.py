@@ -25,7 +25,7 @@ class Debugger(bdb.Bdb):
             super().run(cmd, globals, locals)
         finally:
             self.finished = True
-            self.send_command("continue")
+            self.send_command("continue") # Skip the manatory breakpoint on line 1
 
     def _frame_info(self, frame):
         return {
@@ -40,7 +40,8 @@ class Debugger(bdb.Bdb):
 
     def send(self, event, frame, **extra):
         self.frame = frame
-
+        
+        # TODO: Try setting the ignored vars form the config class: https://docs.plask.app/api/plask/plask.config
         if self.init_lines is None:
             self.init_lines = dict(frame.f_locals)
 
@@ -69,9 +70,8 @@ class Debugger(bdb.Bdb):
         self.sock.sendall(header + payload)
 
     def user_line(self, frame):
-        if not self.break_here(frame):
-            self.set_continue()
-            return
+        self.frame = frame
+        self._update_top_frame_line(frame)
 
         self.send("line", frame)
 
@@ -82,18 +82,14 @@ class Debugger(bdb.Bdb):
 
     def user_call(self, frame, args):
         self.frame = frame
-        self.call_stack.append(self._frame_info(frame)) 
-        self.wait_for_command()
+        self.call_stack.append(self._frame_info(frame))
         self.send("call", frame, args=args)
-        self.set_continue()
 
     def user_return(self, frame, retval):
         self.frame = frame
         if self.call_stack:
             self.call_stack.pop()
-        self.wait_for_command()
         self.send("return", frame, retval=retval)
-        self.set_continue()
 
     def user_exception(self, frame, exc_info):
         self.send("exception", frame, exc=exc_info)
@@ -102,11 +98,11 @@ class Debugger(bdb.Bdb):
     def wait_for_command(self):
         # blocking
         command = self.command_queue.get()
-        if command == "step":
+        if command == "step_into":
             self.set_step()
-        elif command == "next":
+        elif command == "next_line":
             self.set_next(self.frame)
-        elif command == "return":
+        elif command == "step_out":
             self.set_return(self.frame)
         elif command == "continue":
             self.set_continue()
@@ -129,7 +125,7 @@ class Debugger(bdb.Bdb):
 
 
 if __name__ == "__main__":
-    PORT = None 
+    PORT = None
     WORK_DIR = None
 
     # Parse command-line flags
@@ -184,13 +180,15 @@ if __name__ == "__main__":
 
     HOST = "127.0.0.1"
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
         s.bind((HOST, PORT) if PORT is not None else (HOST, 0))
         s.listen()
         PORT = s.getsockname()[1]
         print(f"[DEBUGGER]: Started socket on: {HOST}:{PORT}", flush=True)
+
         conn, addr = s.accept()
-        with conn:
+        try:
             print(f"[DEBUGGER]: Connected by {addr}", flush=True)
             dbg.sock = conn
 
@@ -209,6 +207,9 @@ if __name__ == "__main__":
                 except ConnectionResetError:
                     print("[DEBUGGER]: Connection closed by client.", flush=True)
                     break
+                except Exception as e:
+                    print(f"[DEBUGGER]: Socket error: {e}", flush=True)
+                    break
 
                 if not data:
                     continue
@@ -219,10 +220,25 @@ if __name__ == "__main__":
                     line = line.decode("utf-8").strip()
                     if line == "CONTINUE":
                         dbg.send_command("continue")
-                    elif line == "STEP":
-                        dbg.send_command("step")
+                    elif line == "NEXT_LINE":
+                        dbg.send_command("next_line")
+                    elif line == "STEP_INTO":
+                        dbg.send_command("step_into")
+                    elif line == "STEP_OUT":
+                        dbg.send_command("step_out")
                     elif line == "STOP":
                         print("[DEBUGGER]: Stop command received, exiting.", flush=True)
+                        dbg_thread.join(timeout=1)
                         sys.exit()
 
             dbg_thread.join()
+
+        finally:
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            conn.close()
+
+    finally:
+        s.close()

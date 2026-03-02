@@ -117,11 +117,13 @@ class PersistentSocketThread(QThread):
 
 
 
+
 class DebuggerPanel(QDockWidget):
     current_line_signal = QtSignal(int)
 
     ask_breakpoints = QtSignal()
     received_breakpoints = QtSignal(set)
+
     def __init__(self, window_parent):
         super().__init__("Debugger", window_parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
@@ -129,46 +131,69 @@ class DebuggerPanel(QDockWidget):
         container = QWidget()
         layout = QVBoxLayout(container)
 
-        # --- Connection Config ---
+        # --- Connection Info (now labels only) ---
         config_layout = QHBoxLayout()
-        self.host_input = QLineEdit("127.0.0.1")
-        self.port_input = QLineEdit(str(CONFIG['launcher_debug/port']))
         config_layout.addWidget(QLabel("Host:"))
-        config_layout.addWidget(self.host_input)
+        self.host_label = QLabel("127.0.0.1")
+        config_layout.addWidget(self.host_label)
+
         config_layout.addWidget(QLabel("Port:"))
-        config_layout.addWidget(self.port_input)
+        self.port_label = QLabel(str(CONFIG['launcher_debug/port']))
+        config_layout.addWidget(self.port_label)
 
         # --- Buttons ---
         button_layout = QHBoxLayout()
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.connect_debugger)
+        self.connect_button.setToolTip("Connect to the debugger backend.")
 
-        self.next_break_button = QPushButton("Next Break")
-        self.next_break_button.clicked.connect(lambda: self.send_cmd(b"CONTINUE\n"))
-        self.next_break_button.setEnabled(False)
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.clicked.connect(lambda: self.send_cmd(b"CONTINUE\n"))
+        self.continue_button.setEnabled(False)
+        self.continue_button.setToolTip("Continue execution until the next breakpoint.")
 
-        self.next_line_button = QPushButton("Next Line")
-        self.next_line_button.clicked.connect(lambda: self.send_cmd(b"STEP\n"))
-        self.next_line_button.setEnabled(False)
+        self.step_line_button = QPushButton("Next Line")
+        self.step_line_button.clicked.connect(lambda: self.send_cmd(b"NEXT_LINE\n"))
+        self.step_line_button.setEnabled(False)
+        self.step_line_button.setToolTip("Execute the next line of code.")
+
+        self.step_into_button = QPushButton("Step Into")
+        self.step_into_button.clicked.connect(lambda: self.send_cmd(b"STEP_INTO\n"))
+        self.step_into_button.setEnabled(False)
+        self.step_into_button.setToolTip("Step into the next function call.")
+
+        self.step_out_button = QPushButton("Step Out")
+        self.step_out_button.clicked.connect(lambda: self.send_cmd(b"STEP_OUT\n"))
+        self.step_out_button.setEnabled(False)
+        self.step_out_button.setToolTip("Step out of the current function.")
 
         self.stop_button = QPushButton("Stop Debugger")
         self.stop_button.clicked.connect(self.stop_debugger)
         self.stop_button.setEnabled(False)
+        self.stop_button.setToolTip("Stop the debugger and disconnect from the program.")
 
-        button_layout.addWidget(self.connect_button)
-        button_layout.addWidget(self.next_break_button)
-        button_layout.addWidget(self.next_line_button)
-        button_layout.addWidget(self.stop_button)
+        # Add buttons to layout
+        for btn in [
+            self.connect_button,
+            self.continue_button,
+            self.step_line_button,
+            self.step_into_button,
+            self.step_out_button,
+            self.stop_button
+        ]:
+            button_layout.addWidget(btn)
 
         # --- Panel for Variables ---
         self.panel_widget = QTreeWidget()
         self.panel_widget.setHeaderLabels(["Variable", "Value"])
         self.panel_widget.setColumnWidth(0, 200)  # adjust for variable names
+        self.panel_widget.setToolTip("Shows all current local variables and their values.")
 
         # --- Panel for Call Stack ---
         self.call_stack_widget = QListWidget()
         self.call_stack_widget.setMaximumHeight(150)
         self.call_stack_widget.setMinimumHeight(100)
+        self.call_stack_widget.setToolTip("Shows the current call stack of the program.")
 
         # --- Layout assembly ---
         layout.addLayout(config_layout)
@@ -187,8 +212,8 @@ class DebuggerPanel(QDockWidget):
 
         # Thread ref
         self.socket_thread = None
-
         self.breakpoints = set()
+
 
     def add_panel_message(self, panel, text, msg_type="info"):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -220,12 +245,8 @@ class DebuggerPanel(QDockWidget):
         self.setVisible(not self.isVisible())
 
     def connect_debugger(self):
-        host = self.host_input.text().strip()
-        try:
-            port = int(self.port_input.text())
-        except ValueError:
-            self.add_panel_message(self.panel_widget, "Port must be an integer", "error")
-            return
+        host = "127.0.0.1"
+        port = CONFIG['launcher_debug/port']
 
         if self.socket_thread:
             self.add_panel_message(self.panel_widget, "Already connected.", "info")
@@ -255,9 +276,18 @@ class DebuggerPanel(QDockWidget):
     def on_connected(self):
         self.panel_widget.clear()
         self.add_panel_message(self.panel_widget, "Connected to debugger.", "info")
-        self.next_break_button.setEnabled(True)
-        self.next_line_button.setEnabled(True)
-        self.stop_button.setEnabled(True)
+        self.connect_button.setEnabled(False)
+
+        for btn in [
+            self.continue_button,
+            self.step_line_button,
+            self.step_into_button,
+            self.step_out_button,
+            self.stop_button
+        ]:
+            btn.setEnabled(True)
+
+        self.send_cmd(b"CONTINUE\n")
 
     def add_variable_item(self, parent, name, value, max_str_len=100, max_items=50):
         # Truncate long strings for display
@@ -369,8 +399,17 @@ class DebuggerPanel(QDockWidget):
     def on_closed(self):
         self.panel_widget.clear()
         self.add_panel_message(self.panel_widget, "Debugger connection closed.", "info")
-        self.next_break_button.setEnabled(False)
-        self.next_line_button.setEnabled(False)
-        self.stop_button.setEnabled(False)
+        self.connect_button.setEnabled(True)
+
+        for btn in [
+            self.continue_button,
+            self.step_line_button,
+            self.step_into_button,
+            self.step_out_button,
+            self.stop_button
+        ]:
+            btn.setEnabled(False)
+
+        self.current_line_signal.emit(-1)
         self.socket_thread = None
 
