@@ -53,7 +53,7 @@ class PersistentSocketThread(QThread):
                     return
 
     def run(self):
-        self.connect_socket()
+        self.connect_socket(retries =CONFIG['debugger/connection_retires'],delay=CONFIG['debugger/connection_retry_delay'])
         if not self.connected:
             return
 
@@ -115,9 +115,6 @@ class PersistentSocketThread(QThread):
     def stop(self):
         self.running = False
 
-
-
-
 class DebuggerPanel(QDockWidget):
     current_line_signal = QtSignal(int)
 
@@ -131,7 +128,7 @@ class DebuggerPanel(QDockWidget):
         container = QWidget()
         layout = QVBoxLayout(container)
 
-        # --- Connection Info (now labels only) ---
+        # --- Connection Info ---
         config_layout = QHBoxLayout()
         config_layout.addWidget(QLabel("Host:"))
         self.host_label = QLabel("127.0.0.1")
@@ -186,7 +183,7 @@ class DebuggerPanel(QDockWidget):
         # --- Panel for Variables ---
         self.panel_widget = QTreeWidget()
         self.panel_widget.setHeaderLabels(["Variable", "Value"])
-        self.panel_widget.setColumnWidth(0, 200)  # adjust for variable names
+        self.panel_widget.setColumnWidth(0, 200)
         self.panel_widget.setToolTip("Shows all current local variables and their values.")
 
         # --- Panel for Call Stack ---
