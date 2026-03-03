@@ -32,6 +32,7 @@ class Debugger(bdb.Bdb):
             "function": frame.f_code.co_name,
             "file": os.path.relpath(frame.f_code.co_filename),
             "line": frame.f_lineno,
+            "local_vars": list(frame.f_locals.items()),
         }
 
     def _update_top_frame_line(self, frame):
