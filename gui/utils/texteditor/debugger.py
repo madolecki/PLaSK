@@ -53,7 +53,7 @@ class PersistentSocketThread(QThread):
                     return
 
     def run(self):
-        self.connect_socket(retries =CONFIG['debugger/connection_retires'],delay=CONFIG['debugger/connection_retry_delay'])
+        self.connect_socket(retries=CONFIG['debugger/connection_retires'],delay=CONFIG['debugger/connection_retry_delay'])
         if not self.connected:
             return
 
@@ -114,6 +114,12 @@ class PersistentSocketThread(QThread):
 
     def stop(self):
         self.running = False
+        if self.socket:
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+                self.socket.close()
+            except:
+                pass
 
 class DebuggerPanel(QDockWidget):
     current_line_signal = QtSignal(int)
@@ -408,5 +414,6 @@ class DebuggerPanel(QDockWidget):
             btn.setEnabled(False)
 
         self.current_line_signal.emit(-1)
+        self.socket_thread.stop()
         self.socket_thread = None
 

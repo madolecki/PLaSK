@@ -230,7 +230,7 @@ if __name__ == "__main__":
                     elif line == "STOP":
                         print("[DEBUGGER]: Stop command received, exiting.", flush=True)
                         dbg_thread.join(timeout=1)
-                        sys.exit()
+                        break
 
             dbg_thread.join()
 
@@ -242,4 +242,5 @@ if __name__ == "__main__":
             conn.close()
 
     finally:
+        print("[DEBUGGER]: Succesfuly exited")
         s.close()
