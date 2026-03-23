@@ -18,14 +18,17 @@ class Debugger(bdb.Bdb):
         self.call_stack = []
         self.init_lines = None
         self.line_offset = line_offset
-        self.finished = False
+        self._stop_requested = False
 
     def run(self, cmd, globals=None, locals=None):
         try:
             super().run(cmd, globals, locals)
         finally:
-            self.finished = True
             self.send_command("continue") # Skip the manatory breakpoint on line 1
+
+    def stop(self):
+        self._stop_requested = True
+        self.set_quit()
 
     def _frame_info(self, frame):
         return {
@@ -71,6 +74,8 @@ class Debugger(bdb.Bdb):
         self.sock.sendall(header + payload)
 
     def user_line(self, frame):
+        if self._stop_requested:
+            raise bdb.BdbQuit
         self.frame = frame
         self._update_top_frame_line(frame)
 
@@ -124,6 +129,82 @@ class Debugger(bdb.Bdb):
             json_data = {}
         return json_data
 
+def run_server(dbg, code, HOST, PORT):
+    dbg_thread = None
+    conn = None
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        s.bind((HOST, PORT) if PORT is not None else (HOST, 0))
+        s.listen()
+
+        PORT = s.getsockname()[1]
+        print(f"[DEBUGGER]: Started socket on: {HOST}:{PORT}", flush=True)
+
+        try:
+            conn, addr = s.accept()
+            print(f"[DEBUGGER]: Connected by {addr}", flush=True)
+
+            dbg.sock = conn
+
+            def run_dbg():
+                dbg.run(code)
+
+            dbg_thread = threading.Thread(target=run_dbg, daemon=True)
+            dbg_thread.start()
+
+            buffer = b""
+
+            while True:
+                if dbg_thread and not dbg_thread.is_alive():
+                    print("[DEBUGGER]: Program finished, exiting.", flush=True)
+                    break
+
+                try:
+                    data = conn.recv(1024)
+                except ConnectionResetError:
+                    print("[DEBUGGER]: Connection reset by client.", flush=True)
+                    break
+                except OSError as e:
+                    print(f"[DEBUGGER]: Socket error: {e}", flush=True)
+                    break
+
+                if not data:
+                    print("[DEBUGGER]: Client disconnected.", flush=True)
+                    break
+
+                buffer += data
+
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    line = line.decode("utf-8").strip()
+
+                    if line == "CONTINUE":
+                        dbg.send_command("continue")
+                    elif line == "NEXT_LINE":
+                        dbg.send_command("next_line")
+                    elif line == "STEP_INTO":
+                        dbg.send_command("step_into")
+                    elif line == "STEP_OUT":
+                        dbg.send_command("step_out")
+                    elif line == "STOP":
+                        print("[DEBUGGER]: Stop command received.", flush=True)
+                        return
+
+        finally:
+            if dbg_thread and dbg_thread.is_alive():
+                dbg.stop()
+                dbg_thread.join(timeout=2)
+
+            if conn:
+                try:
+                    conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                conn.close()
+
+    print("[DEBUGGER]: Successfully exited")
 
 if __name__ == "__main__":
     PORT = None
@@ -181,66 +262,4 @@ if __name__ == "__main__":
 
     HOST = "127.0.0.1"
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind((HOST, PORT) if PORT is not None else (HOST, 0))
-        s.listen()
-        PORT = s.getsockname()[1]
-        print(f"[DEBUGGER]: Started socket on: {HOST}:{PORT}", flush=True)
-
-        conn, addr = s.accept()
-        try:
-            print(f"[DEBUGGER]: Connected by {addr}", flush=True)
-            dbg.sock = conn
-
-            # Start debugger in a separate thread
-            dbg_thread = threading.Thread(target=lambda: dbg.run(code))
-            dbg_thread.start()
-
-            buffer = b""
-            while True:
-                if not dbg_thread.is_alive():
-                    print("[DEBUGGER]: Program finished, exiting.", flush=True)
-                    break
-
-                try:
-                    data = conn.recv(1024)
-                except ConnectionResetError:
-                    print("[DEBUGGER]: Connection closed by client.", flush=True)
-                    break
-                except Exception as e:
-                    print(f"[DEBUGGER]: Socket error: {e}", flush=True)
-                    break
-
-                if not data:
-                    continue
-
-                buffer += data
-                while b"\n" in buffer:
-                    line, buffer = buffer.split(b"\n", 1)
-                    line = line.decode("utf-8").strip()
-                    if line == "CONTINUE":
-                        dbg.send_command("continue")
-                    elif line == "NEXT_LINE":
-                        dbg.send_command("next_line")
-                    elif line == "STEP_INTO":
-                        dbg.send_command("step_into")
-                    elif line == "STEP_OUT":
-                        dbg.send_command("step_out")
-                    elif line == "STOP":
-                        print("[DEBUGGER]: Stop command received, exiting.", flush=True)
-                        dbg_thread.join(timeout=1)
-                        break
-
-            dbg_thread.join()
-
-        finally:
-            try:
-                conn.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            conn.close()
-
-    finally:
-        print("[DEBUGGER]: Succesfuly exited")
-        s.close()
+    run_server(dbg, code, HOST, PORT)
