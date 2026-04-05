@@ -20,11 +20,12 @@ class Debugger(bdb.Bdb):
         self.line_offset = line_offset
         self._stop_requested = False
 
-    def run(self, cmd, globals=None, locals=None):
-        try:
-            super().run(cmd, globals, locals)
-        finally:
-            self.send_command("continue") # Skip the manatory breakpoint on line 1
+    #def run(self, cmd, globals=None, locals=None):
+    #    #try:
+    #    self.set_step()
+    #    super().run(cmd, globals, locals)
+    #    #finally:
+    #    #    self.send_command("continue") # Skip the manatory breakpoint on line 1
 
     def stop(self):
         self._stop_requested = True
@@ -100,6 +101,7 @@ class Debugger(bdb.Bdb):
     def user_exception(self, frame, exc_info):
         self.send("exception", frame, exc=exc_info)
         self.set_continue()
+
 
     def wait_for_command(self):
         # blocking
