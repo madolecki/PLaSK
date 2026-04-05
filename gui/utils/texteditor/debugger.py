@@ -190,7 +190,6 @@ class DebuggerPanel(QDockWidget):
 
         # Add buttons to layout
         for btn in [
-            #self.connect_button,
             self.continue_button,
             self.step_line_button,
             self.step_into_button,
@@ -199,11 +198,40 @@ class DebuggerPanel(QDockWidget):
         ]:
             button_layout.addWidget(btn)
 
+        def make_section_header(title: str):
+            btn = QPushButton(f"▼ {title}")
+            btn.setCheckable(True)
+            btn.setChecked(True)
+            btn.setFlat(True)
+
+            # Nice styling
+            btn.setStyleSheet("""
+                QPushButton {
+                    text-align: left;
+                    padding: 4px 6px;
+                    border: none;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #e0e0e0;
+                }
+            """)
+
+            btn.toggled.connect(
+                lambda c, b=btn, t=title: b.setText(("▼ " if c else "▶ ") + t)
+            )
+
+            return btn
+
+
         # --- Panel for Variables ---
         self.panel_widget = QTreeWidget()
         self.panel_widget.setHeaderLabels(["Variable", "Value"])
         self.panel_widget.setColumnWidth(0, 200)
         self.panel_widget.setToolTip("Shows all current local variables and their values.")
+
+        vars_section = self.CollapsibleSection("Variables", self.panel_widget)
+
 
         # --- Panel for Call Stack ---
         self.call_stack_widget = QTreeWidget()
@@ -219,7 +247,10 @@ class DebuggerPanel(QDockWidget):
         self.call_stack_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.call_stack_widget.setToolTip("Shows the current call stack and frame-local variables.")
 
-        # --- Pannel for watch --- 
+        stack_section = self.CollapsibleSection("Call Stack", self.call_stack_widget)
+
+
+        # --- Panel for Watch Expressions ---
         self.watch_tree = QTreeWidget()
         self.watch_tree.setHeaderLabels(["Expression", "Value"])
         self.watch_tree.setColumnWidth(0, 250)
@@ -236,25 +267,46 @@ class DebuggerPanel(QDockWidget):
         self.watch_add_button = QPushButton("Add")
         self.watch_add_button.clicked.connect(self.add_expression)
 
+        watch_container = QWidget()
+        watch_layout = QVBoxLayout(watch_container)
+        watch_layout.setContentsMargins(0, 0, 0, 0)
+
+        watch_layout.addWidget(self.watch_tree)
+
         watch_input_layout = QHBoxLayout()
         watch_input_layout.addWidget(self.watch_input)
         watch_input_layout.addWidget(self.watch_add_button)
-        
+
+        watch_layout.addLayout(watch_input_layout)
+
         self.watch_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.watch_tree.customContextMenuRequested.connect(self.open_context_menu)
 
+        watch_section = self.CollapsibleSection("Watch Expressions", watch_container)
+
         # --- Layout assembly ---
+
+        self.sections = [vars_section, stack_section, watch_section]
+
+        for section in self.sections:
+            section.toggled.connect(self.update_section_stretch)
+
+        sections_container = QWidget()
+        sections_layout = QVBoxLayout(sections_container)
+        sections_layout.setContentsMargins(0, 0, 0, 0)
+        sections_layout.setSpacing(4)
+
+        sections_layout.addWidget(vars_section)
+        sections_layout.addWidget(stack_section)
+        sections_layout.addWidget(watch_section)
+        sections_layout.addStretch(1)
+
+
         layout.addLayout(config_layout)
         layout.addLayout(button_layout)
         layout.addWidget(self.reconnect_button)
-        layout.addWidget(QLabel("Variables:"))
-        layout.addWidget(self.panel_widget)
-        layout.addWidget(QLabel("Call Stack:"))
-        layout.addWidget(self.call_stack_widget)
+        layout.addWidget(sections_container)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(QLabel("Watch Expressions:"))
-        layout.addWidget(self.watch_tree)
-        layout.addLayout(watch_input_layout)
 
         self.setWidget(container)
         self.setVisible(False)
@@ -265,6 +317,69 @@ class DebuggerPanel(QDockWidget):
         # Thread ref
         self.socket_thread = None
         self.breakpoints = set()
+
+    class CollapsibleSection(QWidget):
+        toggled = QtSignal()
+        def __init__(self, title: str, content: QWidget):
+            super().__init__()
+
+            self.toggle_btn = QPushButton(f"▼ {title}")
+            self.toggle_btn.setCheckable(True)
+            self.toggle_btn.setChecked(True)
+            self.toggle_btn.setFlat(True)
+
+            self.toggle_btn.setStyleSheet("""
+                QPushButton {
+                    text-align: left;
+                    padding: 4px 6px;
+                    border: none;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #e0e0e0;
+                }
+            """)
+
+            self.content = content
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(self.toggle_btn)
+            layout.addWidget(self.content)
+
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+            self.toggle_btn.toggled.connect(self.on_toggle)
+
+        def on_toggle(self, checked):
+            title = self.toggle_btn.text()[2:]
+            self.toggle_btn.setText(("▼ " if checked else "▶ ") + title)
+            self.content.setVisible(checked)
+            self.updateGeometry()
+            self.toggled.emit()
+            if self.parentWidget():
+                self.parentWidget().updateGeometry()
+
+    def update_section_stretch(self):
+        expanded = [s for s in self.sections if s.toggle_btn.isChecked()]
+
+        layout = self.sections[0].parentWidget().layout()
+
+        for i in range(layout.count()):
+            layout.setStretch(i, 0)
+
+        if len(expanded) == 0:
+            layout.setStretch(layout.count() - 1, 1)
+            return
+
+        for i, section in enumerate(self.sections):
+            if section in expanded:
+                layout.setStretch(i, 1)
+            else:
+                layout.setStretch(i, 0)
+
+        layout.setStretch(layout.count() - 1, 0)
 
 
     def add_panel_message(self, panel, text, msg_type="info"):
