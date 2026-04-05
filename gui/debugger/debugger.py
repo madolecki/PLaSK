@@ -3,8 +3,8 @@ import json
 import sys
 import threading
 import queue
-import socket
-import struct
+import socket 
+import struct 
 import os
 
 import plask
@@ -23,12 +23,11 @@ class Debugger(bdb.Bdb):
         self.line_offset = line_offset
         self._stop_requested = False
 
+        self.watch_list = []
+
     def run(self, cmd, globals=None, locals=None):
-        #try:
-            self.set_step()
-            super().run(cmd, globals, locals)
-        #finally:
-        #   self.send_command("continue") # Skip the manatory breakpoint on line 1
+        self.set_step()
+        super().run(cmd, globals, locals)
 
     def stop(self):
         self._stop_requested = True
@@ -57,6 +56,11 @@ class Debugger(bdb.Bdb):
         self.frame = frame
         locals_filtered = self._filter_locals(frame.f_locals)
         stack_list = list(self.stack_manager.get_stack())
+
+        eval_dict = {}
+        for w in self.watch_list:
+            eval_dict[w] = self.evaluate_expression(w)
+
         for f in stack_list:
             f['locals'] = self._filter_locals(f['locals'])
 
@@ -66,6 +70,7 @@ class Debugger(bdb.Bdb):
             "line": frame.f_lineno - self.line_offset,
             "locals": locals_filtered,
             "call_stack": stack_list,
+            "watch_list": eval_dict,
             **extra
         }
 
@@ -100,11 +105,9 @@ class Debugger(bdb.Bdb):
         self.stack_manager.on_return(frame)
         self.send("return", frame, retval=retval)
 
-
     def user_exception(self, frame, exc_info):
         self.send("exception", frame, exc=exc_info)
         self.set_continue()
-
 
     def wait_for_command(self):
         # blocking
@@ -120,6 +123,12 @@ class Debugger(bdb.Bdb):
 
     def send_command(self, cmd):
         self.command_queue.put(cmd)
+
+    def evaluate_expression(self, expr: str):
+        try:
+            return eval(expr, self.frame.f_globals, self.frame.f_locals)
+        except Exception as e:
+            return f"<Error: {e.__class__.__name__}: {e}>"
 
     def serialize_json(self, data):
         data['locals'].pop('__loader__', None)
@@ -193,6 +202,13 @@ def run_server(dbg, code, HOST, PORT):
                         dbg.send_command("step_into")
                     elif line == "STEP_OUT":
                         dbg.send_command("step_out")
+                    elif line.startswith("WATCHED:"):
+                        expr_list_str = line[len("WATCHED:"):]
+                        try:
+                            exprs = json.loads(expr_list_str)
+                            dbg.watch_list = exprs
+                        except Exception as e:
+                            print("Invalid watch list:", e, flush=True)
                     elif line == "STOP":
                         print("[DEBUGGER]: Stop command received.", flush=True)
                         return
