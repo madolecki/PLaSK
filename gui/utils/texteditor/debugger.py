@@ -151,10 +151,6 @@ class DebuggerPanel(QDockWidget):
         button_layout = QHBoxLayout()
         style = self.style()
 
-        #self.connect_button = QPushButton()
-        #self.connect_button.setIcon(style.standardIcon(QStyle.SP_DialogOpenButton))
-        #self.connect_button.clicked.connect(self.connect_debugger)
-        #self.connect_button.setToolTip("Connect to the debugger backend.")
 
         self.continue_button = QPushButton()
         self.continue_button.setIcon(QIcon("gui/utils/texteditor/play.svg"))
@@ -185,6 +181,12 @@ class DebuggerPanel(QDockWidget):
         self.stop_button.clicked.connect(self.stop_debugger)
         self.stop_button.setEnabled(False)
         self.stop_button.setToolTip("Stop the debugger and disconnect from the program.")
+
+        self.reconnect_button = QPushButton("Reconnect")
+        self.reconnect_button.setToolTip("Reconnect to debugger backend.")
+        self.reconnect_button.setEnabled(False) 
+        self.reconnect_button.setVisible(False) 
+        self.reconnect_button.clicked.connect(self.connect_debugger)
 
         # Add buttons to layout
         for btn in [
@@ -244,6 +246,7 @@ class DebuggerPanel(QDockWidget):
         # --- Layout assembly ---
         layout.addLayout(config_layout)
         layout.addLayout(button_layout)
+        layout.addWidget(self.reconnect_button)
         layout.addWidget(QLabel("Variables:"))
         layout.addWidget(self.panel_widget)
         layout.addWidget(QLabel("Call Stack:"))
@@ -297,10 +300,6 @@ class DebuggerPanel(QDockWidget):
         host = "127.0.0.1"
         port = CONFIG['launcher_debug/port']
 
-        if self.socket_thread:
-            self.add_panel_message(self.panel_widget, "Already connected.", "info")
-            return
-
         self.add_panel_message(self.panel_widget, "Connecting...", "info")
 
         self.socket_thread = PersistentSocketThread(host, port)
@@ -326,7 +325,8 @@ class DebuggerPanel(QDockWidget):
     def on_connected(self):
         self.panel_widget.clear()
         self.add_panel_message(self.panel_widget, "Connected to debugger.", "info")
-        #self.connect_button.setEnabled(False)
+        self.reconnect_button.setVisible(False)
+        self.reconnect_button.setEnabled(False)
 
         for btn in [
             self.continue_button,
@@ -526,9 +526,16 @@ class DebuggerPanel(QDockWidget):
     def show_error(self, msg):
         self.add_panel_message(self.panel_widget, msg, "error")
 
+        if self.socket_thread and not self.socket_thread.connected:
+                self.reconnect_button.setVisible(True)
+                self.reconnect_button.setEnabled(True)
+
     def on_closed(self):
         self.panel_widget.clear()
         self.add_panel_message(self.panel_widget, "Debugger connection closed.", "info")
+
+        self.reconnect_button.setVisible(True)
+        self.reconnect_button.setEnabled(True)
 
         for btn in [
             self.continue_button,
