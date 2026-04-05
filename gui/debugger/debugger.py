@@ -9,23 +9,26 @@ import os
 
 import plask
 
+from stack_manager import StackManager
+
 class Debugger(bdb.Bdb):
     def __init__(self, sock, line_offset=0):
         super().__init__()
         self.command_queue = queue.Queue()
         self.frame = None
         self.sock = sock
-        self.call_stack = []
+        
+        self.stack_manager = StackManager(__file__)
         self.init_lines = None
         self.line_offset = line_offset
         self._stop_requested = False
 
-    #def run(self, cmd, globals=None, locals=None):
-    #    #try:
-    #    self.set_step()
-    #    super().run(cmd, globals, locals)
-    #    #finally:
-    #    #    self.send_command("continue") # Skip the manatory breakpoint on line 1
+    def run(self, cmd, globals=None, locals=None):
+        #try:
+            self.set_step()
+            super().run(cmd, globals, locals)
+        #finally:
+        #   self.send_command("continue") # Skip the manatory breakpoint on line 1
 
     def stop(self):
         self._stop_requested = True
@@ -38,10 +41,6 @@ class Debugger(bdb.Bdb):
             "line": frame.f_lineno,
             "local_vars": list(frame.f_locals.items()),
         }
-
-    def _update_top_frame_line(self, frame):
-        if self.call_stack:
-            self.call_stack[-1]["line"] = frame.f_lineno
 
     def send(self, event, frame, **extra):
         self.frame = frame
@@ -61,7 +60,7 @@ class Debugger(bdb.Bdb):
             "file": frame.f_code.co_filename,
             "line": frame.f_lineno - self.line_offset,
             "locals": locals_filtered,
-            "call_stack": list(self.call_stack),
+            "call_stack": list(self.stack_manager.get_stack()),
             **extra
         }
 
@@ -78,7 +77,8 @@ class Debugger(bdb.Bdb):
         if self._stop_requested:
             raise bdb.BdbQuit
         self.frame = frame
-        self._update_top_frame_line(frame)
+        self.stack_manager.on_line(frame)
+        self.stack_manager.rebuild_from_frame(frame)
 
         self.send("line", frame)
 
@@ -88,15 +88,13 @@ class Debugger(bdb.Bdb):
         self.wait_for_command()
 
     def user_call(self, frame, args):
-        self.frame = frame
-        self.call_stack.append(self._frame_info(frame))
+        self.stack_manager.on_call(frame)
         self.send("call", frame, args=args)
 
     def user_return(self, frame, retval):
-        self.frame = frame
-        if self.call_stack:
-            self.call_stack.pop()
+        self.stack_manager.on_return(frame)
         self.send("return", frame, retval=retval)
+
 
     def user_exception(self, frame, exc_info):
         self.send("exception", frame, exc=exc_info)
