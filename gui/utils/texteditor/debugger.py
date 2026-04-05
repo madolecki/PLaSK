@@ -1,7 +1,7 @@
 from ...qt.QtWidgets import *
 from ...qt.QtCore import Qt, QThread
 from ...qt import QtSignal
-from ...qt.QtGui import QColor
+from ...qt.QtGui import QColor, QIcon
 from ...utils.config import CONFIG
 import socket
 import json
@@ -146,38 +146,46 @@ class DebuggerPanel(QDockWidget):
 
         # --- Buttons ---
         button_layout = QHBoxLayout()
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.clicked.connect(self.connect_debugger)
-        self.connect_button.setToolTip("Connect to the debugger backend.")
+        style = self.style()
 
-        self.continue_button = QPushButton("Continue")
+        #self.connect_button = QPushButton()
+        #self.connect_button.setIcon(style.standardIcon(QStyle.SP_DialogOpenButton))
+        #self.connect_button.clicked.connect(self.connect_debugger)
+        #self.connect_button.setToolTip("Connect to the debugger backend.")
+
+        self.continue_button = QPushButton()
+        self.continue_button.setIcon(QIcon("gui/utils/texteditor/play.svg"))
         self.continue_button.clicked.connect(lambda: self.send_cmd(b"CONTINUE\n"))
         self.continue_button.setEnabled(False)
         self.continue_button.setToolTip("Continue execution until the next breakpoint.")
 
-        self.step_line_button = QPushButton("Next Line")
+        self.step_line_button = QPushButton()
+        self.step_line_button.setIcon(QIcon("gui/utils/texteditor/step.svg"))
         self.step_line_button.clicked.connect(lambda: self.send_cmd(b"NEXT_LINE\n"))
         self.step_line_button.setEnabled(False)
         self.step_line_button.setToolTip("Execute the next line of code.")
 
-        self.step_into_button = QPushButton("Step Into")
+        self.step_into_button = QPushButton()
+        self.step_into_button.setIcon(QIcon("gui/utils/texteditor/step_in.svg"))
         self.step_into_button.clicked.connect(lambda: self.send_cmd(b"STEP_INTO\n"))
         self.step_into_button.setEnabled(False)
         self.step_into_button.setToolTip("Step into the next function call.")
 
-        self.step_out_button = QPushButton("Step Out")
+        self.step_out_button = QPushButton()
+        self.step_out_button.setIcon(QIcon("gui/utils/texteditor/step_out.svg"))
         self.step_out_button.clicked.connect(lambda: self.send_cmd(b"STEP_OUT\n"))
         self.step_out_button.setEnabled(False)
         self.step_out_button.setToolTip("Step out of the current function.")
 
-        self.stop_button = QPushButton("Stop Debugger")
+        self.stop_button = QPushButton()
+        self.stop_button.setIcon(style.standardIcon(QStyle.SP_MediaStop))
         self.stop_button.clicked.connect(self.stop_debugger)
         self.stop_button.setEnabled(False)
         self.stop_button.setToolTip("Stop the debugger and disconnect from the program.")
 
         # Add buttons to layout
         for btn in [
-            self.connect_button,
+            #self.connect_button,
             self.continue_button,
             self.step_line_button,
             self.step_into_button,
@@ -193,10 +201,22 @@ class DebuggerPanel(QDockWidget):
         self.panel_widget.setToolTip("Shows all current local variables and their values.")
 
         # --- Panel for Call Stack ---
-        self.call_stack_widget = QListWidget()
+        self.call_stack_widget = QTableWidget()
+        self.call_stack_widget.setColumnCount(3)
+        self.call_stack_widget.setHorizontalHeaderLabels(["Function", "File", "Line"])
+        header = self.call_stack_widget.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+
         self.call_stack_widget.setMaximumHeight(150)
         self.call_stack_widget.setMinimumHeight(100)
         self.call_stack_widget.setToolTip("Shows the current call stack of the program.")
+
+        self.call_stack_widget.verticalHeader().setVisible(False)
+        self.call_stack_widget.setSelectionBehavior(QTableWidget.SelectRows)
+        self.call_stack_widget.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.call_stack_widget.setAlternatingRowColors(True)
 
         # --- Layout assembly ---
         layout.addLayout(config_layout)
@@ -279,7 +299,7 @@ class DebuggerPanel(QDockWidget):
     def on_connected(self):
         self.panel_widget.clear()
         self.add_panel_message(self.panel_widget, "Connected to debugger.", "info")
-        self.connect_button.setEnabled(False)
+        #self.connect_button.setEnabled(False)
 
         for btn in [
             self.continue_button,
@@ -386,15 +406,20 @@ class DebuggerPanel(QDockWidget):
         self.current_line_signal.emit(line)
 
     def update_call_stack(self, stack_data):
-        self.call_stack_widget.clear()
-        for frame in stack_data:
+        self.call_stack_widget.setRowCount(len(stack_data))
+
+        for row, frame in enumerate(stack_data):
             func = frame.get("function", "?")
             file = frame.get("file", "?")
             line = frame.get("line", "?")
+
             # Shorten file path
             parts = file.replace("\\", "/").split("/")
             short_file = "/".join(parts[-3:]) if len(parts) > 3 else file
-            self.call_stack_widget.addItem(f"{func} @ {short_file}:{line}")
+
+            self.call_stack_widget.setItem(row, 0, QTableWidgetItem(func))
+            self.call_stack_widget.setItem(row, 1, QTableWidgetItem(short_file))
+            self.call_stack_widget.setItem(row, 2, QTableWidgetItem(str(line)))
 
     def show_error(self, msg):
         self.add_panel_message(self.panel_widget, msg, "error")
@@ -402,7 +427,7 @@ class DebuggerPanel(QDockWidget):
     def on_closed(self):
         self.panel_widget.clear()
         self.add_panel_message(self.panel_widget, "Debugger connection closed.", "info")
-        self.connect_button.setEnabled(True)
+        #self.connect_button.setEnabled(True)
 
         for btn in [
             self.continue_button,
