@@ -201,22 +201,18 @@ class DebuggerPanel(QDockWidget):
         self.panel_widget.setToolTip("Shows all current local variables and their values.")
 
         # --- Panel for Call Stack ---
-        self.call_stack_widget = QTableWidget()
+        self.call_stack_widget = QTreeWidget()
+        self.call_stack_widget.setHeaderLabels(["Function", "File", "Line"])
         self.call_stack_widget.setColumnCount(3)
-        self.call_stack_widget.setHorizontalHeaderLabels(["Function", "File", "Line"])
-        header = self.call_stack_widget.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-
-        self.call_stack_widget.setMaximumHeight(150)
-        self.call_stack_widget.setMinimumHeight(100)
-        self.call_stack_widget.setToolTip("Shows the current call stack of the program.")
-
-        self.call_stack_widget.verticalHeader().setVisible(False)
-        self.call_stack_widget.setSelectionBehavior(QTableWidget.SelectRows)
-        self.call_stack_widget.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.call_stack_widget.setColumnWidth(0, 60)
+        self.call_stack_widget.setColumnWidth(1, 120)
+        self.call_stack_widget.setColumnWidth(2, 20)
         self.call_stack_widget.setAlternatingRowColors(True)
+        self.call_stack_widget.setRootIsDecorated(True)
+        self.call_stack_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.call_stack_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.call_stack_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.call_stack_widget.setToolTip("Shows the current call stack and frame-local variables.")
 
         # --- Layout assembly ---
         layout.addLayout(config_layout)
@@ -405,21 +401,31 @@ class DebuggerPanel(QDockWidget):
         line = int(vars_data["line"])
         self.current_line_signal.emit(line)
 
-    def update_call_stack(self, stack_data):
-        self.call_stack_widget.setRowCount(len(stack_data))
 
-        for row, frame in enumerate(stack_data):
+    def update_call_stack(self, stack_data):
+        self.call_stack_widget.clear()
+
+        for frame in stack_data:
             func = frame.get("function", "?")
             file = frame.get("file", "?")
             line = frame.get("line", "?")
+            locals_dict = frame.get("locals", {})
 
-            # Shorten file path
             parts = file.replace("\\", "/").split("/")
             short_file = "/".join(parts[-3:]) if len(parts) > 3 else file
 
-            self.call_stack_widget.setItem(row, 0, QTableWidgetItem(func))
-            self.call_stack_widget.setItem(row, 1, QTableWidgetItem(short_file))
-            self.call_stack_widget.setItem(row, 2, QTableWidgetItem(str(line)))
+            top = QTreeWidgetItem([
+                func,
+                short_file,
+                str(line)
+            ])
+            self.call_stack_widget.addTopLevelItem(top)
+
+            for key, value in locals_dict.items():
+                self.add_variable_item(top, key, value)
+
+            top.setExpanded(False)
+
 
     def show_error(self, msg):
         self.add_panel_message(self.panel_widget, msg, "error")

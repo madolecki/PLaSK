@@ -15,6 +15,7 @@ class StackManager:
             "function": frame.f_code.co_name,
             "file": frame.f_code.co_filename,
             "line": frame.f_lineno,
+            "locals": frame.f_locals,
         }
 
     def on_call(self, frame):

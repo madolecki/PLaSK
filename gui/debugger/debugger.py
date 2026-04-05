@@ -41,26 +41,31 @@ class Debugger(bdb.Bdb):
             "line": frame.f_lineno,
             "local_vars": list(frame.f_locals.items()),
         }
+    
+    def _filter_locals(self, f_locals):
+        # TODO: Try setting the ignored vars form the config class: https://docs.plask.app/api/plask/plask.config
+        if self.init_lines is None:
+            self.init_lines = dict(f_locals)
+
+        return {
+            k: v
+            for k, v in f_locals.items()
+            if k not in self.init_lines
+        }
 
     def send(self, event, frame, **extra):
         self.frame = frame
-        
-        # TODO: Try setting the ignored vars form the config class: https://docs.plask.app/api/plask/plask.config
-        if self.init_lines is None:
-            self.init_lines = dict(frame.f_locals)
-
-        locals_filtered = {
-            k: v
-            for k, v in frame.f_locals.items()
-            if k not in self.init_lines
-        }
+        locals_filtered = self._filter_locals(frame.f_locals)
+        stack_list = list(self.stack_manager.get_stack())
+        for f in stack_list:
+            f['locals'] = self._filter_locals(f['locals'])
 
         data = {
             "event": event,
             "file": frame.f_code.co_filename,
             "line": frame.f_lineno - self.line_offset,
             "locals": locals_filtered,
-            "call_stack": list(self.stack_manager.get_stack()),
+            "call_stack": stack_list,
             **extra
         }
 
