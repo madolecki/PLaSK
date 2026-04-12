@@ -19,7 +19,7 @@ from ...qt.QtWidgets import *
 from ..config import CONFIG, dark_style
 from ..widgets import EDITOR_FONT, set_icon_size
 
-from .debugger import DebuggerPanel
+from ...debugger.ui import DebuggerPanel
 
 
 def update_textedit():

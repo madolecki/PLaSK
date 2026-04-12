@@ -1,0 +1,395 @@
+from gui.debugger.ui.watched import WatchedPanel
+from ...qt.QtWidgets import *
+from ...qt.QtCore import Qt, QThread
+from ...qt import QtSignal
+from ...qt.QtGui import QColor
+from ...utils.config import CONFIG
+import socket
+import json
+import struct
+import time
+from datetime import datetime
+
+from .controls import DebugControls
+from .variables import VariablesPanel
+from .callstack import CallStackPanel
+from .watched import WatchedPanel
+
+
+class PersistentSocketThread(QThread):
+    connected_ok = QtSignal()
+    error = QtSignal(str)
+    closed = QtSignal()
+
+    vars_received = QtSignal(dict)
+    stack_received = QtSignal(list)
+    watch_list_received = QtSignal(dict)
+
+    send_command_signal = QtSignal(bytes)
+
+    def __init__(self, host, port):
+        super().__init__()
+        self.host = host
+        self.port = port
+        self.socket = None
+        self.running = True
+        self.connected = False
+
+        self.send_queue = []
+        self.send_command_signal.connect(self.enqueue_command)
+
+    def enqueue_command(self, cmd: bytes):
+        self.send_queue.append(cmd)
+
+    def connect_socket(self, retries=5, delay=0.5):
+        attempt = 0
+        while attempt < retries and self.running:
+            try:
+                self.socket = socket.create_connection((self.host, self.port), timeout=3)
+                self.socket.settimeout(0.25)
+                self.connected = True
+                self.connected_ok.emit()
+                return
+            except Exception as e:
+                attempt += 1
+                if attempt < retries:
+                    time.sleep(delay)
+                else:
+                    self.error.emit(f"Connection failed after {retries} attempts: {e}")
+                    self.connected = False
+                    return
+
+    def run(self):
+        self.connect_socket(retries=CONFIG['debugger/connection_retires'],delay=CONFIG['debugger/connection_retry_delay'])
+        if not self.connected:
+            return
+
+        while self.running:
+            # Send queued commands
+            if self.send_queue:
+                cmd = self.send_queue.pop(0)
+                try:
+                    self.socket.sendall(cmd)
+                except Exception as e:
+                    self.error.emit(f"Send error: {e}")
+                    break
+
+            # Try receiving a JSON response
+            try:
+                data = self.recv_json(self.socket)
+                if data:
+                    try:
+                        vars_dict = json.loads(data)
+                        if "locals" in vars_dict:
+                            self.vars_received.emit(vars_dict)
+
+                        if "call_stack" in vars_dict:
+                            self.stack_received.emit(vars_dict["call_stack"])
+                        
+                        if "watch_list" in vars_dict:
+                            self.watch_list_received.emit(vars_dict["watch_list"])
+                    except Exception as e:
+                        self.error.emit(f"JSON decode error: {e}")
+
+            except socket.timeout:
+                pass
+            except Exception as e:
+                self.error.emit(f"Socket error: {e}")
+                break
+
+            time.sleep(0.01)
+
+        try:
+            if self.socket:
+                self.socket.close()
+        except:
+            pass
+
+        self.closed.emit()
+
+    def recv_json(self, sock):
+        def recv_all(sock, n):
+            data = b""
+            while len(data) < n:
+                packet = sock.recv(n - len(data))
+                if not packet:
+                    raise ConnectionError("Socket closed")
+                data += packet
+            return data
+        header = recv_all(sock, 4)
+        (length,) = struct.unpack("!I", header)
+        payload = recv_all(sock, length)
+        return json.loads(payload.decode("utf-8"))
+
+    def stop(self):
+        self.running = False
+        if self.socket:
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+                self.socket.close()
+            except:
+                pass
+
+class DebuggerPanel(QDockWidget):
+    current_line_signal = QtSignal(int)
+
+    ask_breakpoints = QtSignal()
+    received_breakpoints = QtSignal(set)
+
+    def __init__(self, window_parent):
+        super().__init__("Debugger", window_parent)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+
+        config_layout = QHBoxLayout()
+        config_layout.addWidget(QLabel("Host:"))
+        self.host_label = QLabel("127.0.0.1")
+        config_layout.addWidget(self.host_label)
+
+        config_layout.addWidget(QLabel("Port:"))
+        self.port_label = QLabel(str(CONFIG['launcher_debug/port']))
+        config_layout.addWidget(self.port_label)
+
+        self.controls_widget = DebugControls()
+        self.variables_widget = VariablesPanel()
+        self.call_stack_widget = CallStackPanel()
+        self.watched_widget = WatchedPanel()
+
+        self.reconnect_button = QPushButton("Reconnect")
+        self.reconnect_button.setToolTip("Reconnect to debugger backend.")
+        self.reconnect_button.setEnabled(False) 
+        self.reconnect_button.setVisible(False) 
+        self.reconnect_button.clicked.connect(self.connect_debugger)
+
+        vars_section = self.CollapsibleSection("Variables", self.variables_widget)
+        stack_section = self.CollapsibleSection("Call Stack", self.call_stack_widget)
+        watch_section = self.CollapsibleSection("Watch Expressions", self.watched_widget)
+
+        self.sections = [vars_section, stack_section, watch_section]
+
+        for section in self.sections:
+            section.toggled.connect(self.update_section_stretch)
+
+        sections_container = QWidget()
+        sections_layout = QVBoxLayout(sections_container)
+        sections_layout.setContentsMargins(0, 0, 0, 0)
+        sections_layout.setSpacing(4)
+        sections_layout.addWidget(vars_section)
+        sections_layout.addWidget(stack_section)
+        sections_layout.addWidget(watch_section)
+        sections_layout.addStretch(1)
+
+
+        layout.addLayout(config_layout)
+        layout.addWidget(self.controls_widget)
+        layout.addWidget(self.reconnect_button)
+        layout.addWidget(sections_container)
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        self.setWidget(container)
+        self.setVisible(False)
+
+        if window_parent and hasattr(window_parent, "addDockWidget"):
+            window_parent.addDockWidget(Qt.RightDockWidgetArea, self)
+
+        self._connect_signals()
+
+        # Thread ref
+        self.socket_thread = None
+        self.breakpoints = set()
+
+    def _connect_signals(self):
+        # vars panel
+        self.controls_widget.continue_clicked.connect(self.send_continue)
+        self.controls_widget.step_line_clicked.connect(self.send_step_line)
+        self.controls_widget.step_into_clicked.connect(self.send_step_into)
+        self.controls_widget.step_out_clicked.connect(self.send_step_out)
+        self.controls_widget.stop_clicked.connect(self.stop_debugger)
+        self.watched_widget.update_watched_expressions.connect(self.send_watched_expressions)
+
+    class CollapsibleSection(QWidget):
+        toggled = QtSignal()
+        def __init__(self, title: str, content: QWidget):
+            super().__init__()
+
+            self.toggle_btn = QPushButton(f"▼ {title}")
+            self.toggle_btn.setCheckable(True)
+            self.toggle_btn.setChecked(True)
+            self.toggle_btn.setFlat(True)
+
+            self.toggle_btn.setStyleSheet("""
+                QPushButton {
+                    text-align: left;
+                    padding: 4px 6px;
+                    border: none;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #e0e0e0;
+                }
+            """)
+
+            self.content = content
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(self.toggle_btn)
+            layout.addWidget(self.content)
+
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+            self.toggle_btn.toggled.connect(self.on_toggle)
+
+        def on_toggle(self, checked):
+            title = self.toggle_btn.text()[2:]
+            self.toggle_btn.setText(("▼ " if checked else "▶ ") + title)
+            self.content.setVisible(checked)
+            self.updateGeometry()
+            self.toggled.emit()
+            if self.parentWidget():
+                self.parentWidget().updateGeometry()
+
+    def update_section_stretch(self):
+        expanded = [s for s in self.sections if s.toggle_btn.isChecked()]
+
+        layout = self.sections[0].parentWidget().layout()
+
+        for i in range(layout.count()):
+            layout.setStretch(i, 0)
+
+        if len(expanded) == 0:
+            layout.setStretch(layout.count() - 1, 1)
+            return
+
+        for i, section in enumerate(self.sections):
+            if section in expanded:
+                layout.setStretch(i, 1)
+            else:
+                layout.setStretch(i, 0)
+
+        layout.setStretch(layout.count() - 1, 0)
+
+    def add_panel_message(self, panel, text, msg_type="info"):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        item = QTreeWidgetItem([timestamp, text])
+        
+        color_map = {
+            "error": QColor("red"),
+            "warn": QColor("orange"),
+            "info": QColor("blue"),
+            "debug": QColor("gray")
+        }
+        color = color_map.get(msg_type, QColor("black"))
+        item.setForeground(1, color)
+        
+        panel.addTopLevelItem(item)
+        panel.scrollToItem(item)
+
+    def get_breakpoint_lines(self):
+        self.request_breakpoints()
+        return self.breakpoints
+
+    def request_breakpoints(self):
+        self.ask_breakpoints.emit()
+
+    def recieve_breakpoints(self, breakpoints):
+        self.breakpoints = breakpoints
+
+    def toggle_visibility(self):
+        self.setVisible(not self.isVisible())
+
+    def connect_debugger(self):
+        host = "127.0.0.1"
+        port = CONFIG['launcher_debug/port']
+
+        self.add_panel_message(self.variables_widget.variables_panel, "Connecting...", "info")
+
+        self.socket_thread = PersistentSocketThread(host, port)
+        self.socket_thread.connected_ok.connect(self.on_connected)
+        self.socket_thread.vars_received.connect(self.variables_widget.update_vars)
+        self.socket_thread.vars_received.connect(self.update_current_showed_line)
+        self.socket_thread.error.connect(self.show_error)
+        self.socket_thread.closed.connect(self.on_closed)
+        self.socket_thread.stack_received.connect(self.call_stack_widget.update_call_stack)
+        self.socket_thread.watch_list_received.connect(self.watched_widget.update_watch_list)
+        self.socket_thread.start()
+
+    def send_continue(self):
+        self.send_cmd(b"CONTINUE\n")
+    
+    def send_step_line(self):
+        self.send_cmd(b"NEXT_LINE\n")
+
+    def send_step_into(self):
+        self.send_cmd(b"STEP_INTO\n")
+
+    def send_step_out(self):
+        self.send_cmd(b"STEP_OUT\n")
+
+    def send_watched_expressions(self, expressions):
+        list_str = json.dumps(expressions)
+        watched_str = f"WATCHED:{list_str}\n"
+        self.send_cmd(watched_str.encode('utf-8'))
+
+    def update_current_showed_line(self, vars_data):
+        line = int(vars_data["line"])
+        self.current_line_signal.emit(line)
+
+    def send_cmd(self, cmd: bytes):
+        if self.socket_thread and self.socket_thread.connected:
+            self.socket_thread.send_command_signal.emit(cmd)
+        else:
+            self.add_panel_message(self.variables_widget.variables_panel, "Not connected", "warn")
+
+    def stop_debugger(self):
+        if self.socket_thread:
+            self.send_cmd(b"STOP\n")
+            self.socket_thread.stop()
+
+    def on_connected(self):
+        self.variables_widget.variables_panel.clear()
+        self.add_panel_message(self.variables_widget.variables_panel, "Connected to debugger.", "info")
+        self.reconnect_button.setVisible(False)
+        self.reconnect_button.setEnabled(False)
+
+        for btn in [
+            self.controls_widget.continue_button,
+            self.controls_widget.step_line_button,
+            self.controls_widget.step_into_button,
+            self.controls_widget.step_out_button,
+            self.controls_widget.stop_button
+        ]:
+            btn.setEnabled(True)
+
+        self.send_cmd(b"CONTINUE\n")
+
+    def show_error(self, msg):
+        self.add_panel_message(self.variables_widget.variables_panel, msg, "error")
+
+        if self.socket_thread and not self.socket_thread.connected:
+                self.reconnect_button.setVisible(True)
+                self.reconnect_button.setEnabled(True)
+
+    def on_closed(self):
+        self.variables_widget.variables_panel.clear()
+        self.add_panel_message(self.variables_widget.variables_panel, "Debugger connection closed.", "info")
+
+        self.reconnect_button.setVisible(True)
+        self.reconnect_button.setEnabled(True)
+
+        for btn in [
+            self.controls_widget.continue_button,
+            self.controls_widget.step_line_button,
+            self.controls_widget.step_into_button,
+            self.controls_widget.step_out_button,
+            self.controls_widget.stop_button
+        ]:
+            btn.setEnabled(False)
+
+        self.current_line_signal.emit(-1)
+        self.socket_thread.stop()
+        self.socket_thread = None
+
