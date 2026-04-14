@@ -169,23 +169,28 @@ class DebuggerPanel(QDockWidget):
 
         self.sections = [vars_section, stack_section, watch_section]
 
-        for section in self.sections:
-            section.toggled.connect(self.update_section_stretch)
+        self.splitter = QSplitter(Qt.Vertical)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(6)
 
-        sections_container = QWidget()
-        sections_layout = QVBoxLayout(sections_container)
-        sections_layout.setContentsMargins(0, 0, 0, 0)
-        sections_layout.setSpacing(4)
-        sections_layout.addWidget(vars_section)
-        sections_layout.addWidget(stack_section)
-        sections_layout.addWidget(watch_section)
-        sections_layout.addStretch(1)
+        self.splitter.addWidget(vars_section)
+        self.splitter.addWidget(stack_section)
+        self.splitter.addWidget(watch_section)
 
+        self.splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #ccc;
+            }
+            QSplitter::handle:hover {
+                background-color: #aaa;
+            }
+        """)
+
+        layout.addWidget(self.splitter)
 
         layout.addLayout(config_layout)
         layout.addWidget(self.controls_widget)
         layout.addWidget(self.reconnect_button)
-        layout.addWidget(sections_container)
         layout.setContentsMargins(4, 4, 4, 4)
 
         self.setWidget(container)
@@ -211,8 +216,11 @@ class DebuggerPanel(QDockWidget):
 
     class CollapsibleSection(QWidget):
         toggled = QtSignal()
+
         def __init__(self, title: str, content: QWidget):
             super().__init__()
+
+            self._saved_size = None
 
             self.toggle_btn = QPushButton(f"▼ {title}")
             self.toggle_btn.setCheckable(True)
@@ -239,38 +247,65 @@ class DebuggerPanel(QDockWidget):
             layout.addWidget(self.toggle_btn)
             layout.addWidget(self.content)
 
-            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
             self.toggle_btn.toggled.connect(self.on_toggle)
 
         def on_toggle(self, checked):
             title = self.toggle_btn.text()[2:]
             self.toggle_btn.setText(("▼ " if checked else "▶ ") + title)
+
+            splitter = self.parentWidget()
+
+            if not isinstance(splitter, QSplitter):
+                self.content.setVisible(checked)
+                return
+
+            widgets = [splitter.widget(i) for i in range(splitter.count())]
+            sizes = splitter.sizes()
+
+            size_map = dict(zip(widgets, sizes))
+
+            collapsed_height = self.toggle_btn.sizeHint().height()
+
+            expanded = []
+            collapsed = []
+
+            for w in widgets:
+                if isinstance(w, DebuggerPanel.CollapsibleSection):
+                    if w.toggle_btn.isChecked():
+                        expanded.append(w)
+                    else:
+                        collapsed.append(w)
+
+            total_size = sum(sizes)
+
+            collapsed_total = len(collapsed) * collapsed_height
+            remaining = max(0, total_size - collapsed_total)
+
+            expanded_sizes = [size_map[w] for w in expanded]
+            expanded_total = sum(expanded_sizes)
+
+            new_sizes = []
+
+            for w in widgets:
+                if w in collapsed:
+                    new_sizes.append(collapsed_height)
+                else:
+                    if expanded_total > 0:
+                        proportion = size_map[w] / expanded_total
+                        new_sizes.append(int(proportion * remaining))
+                    else:
+                        new_sizes.append(remaining // max(1, len(expanded)))
+
+            MIN_EXPANDED = 80
+
+            for i, w in enumerate(widgets):
+                if w in expanded:
+                    new_sizes[i] = max(new_sizes[i], MIN_EXPANDED)
+
+            splitter.setSizes(new_sizes)
+
             self.content.setVisible(checked)
-            self.updateGeometry()
             self.toggled.emit()
-            if self.parentWidget():
-                self.parentWidget().updateGeometry()
-
-    def update_section_stretch(self):
-        expanded = [s for s in self.sections if s.toggle_btn.isChecked()]
-
-        layout = self.sections[0].parentWidget().layout()
-
-        for i in range(layout.count()):
-            layout.setStretch(i, 0)
-
-        if len(expanded) == 0:
-            layout.setStretch(layout.count() - 1, 1)
-            return
-
-        for i, section in enumerate(self.sections):
-            if section in expanded:
-                layout.setStretch(i, 1)
-            else:
-                layout.setStretch(i, 0)
-
-        layout.setStretch(layout.count() - 1, 0)
 
     def add_panel_message(self, panel, text, msg_type="info"):
         timestamp = datetime.now().strftime("%H:%M:%S")
