@@ -13,12 +13,21 @@ class Debugger(bdb.Bdb):
         self.on_call = None
         self.on_return = None
         self.on_exception = None
+        self.on_quit = None
 
         self.frame = None
 
     def run(self, cmd, globals=None, locals=None):
-        self.set_step()
-        super().run(cmd, globals, locals)
+        self._finished = False
+        try:
+            self.set_step()
+            super().run(cmd, globals, locals)
+        except bdb.BdbQuit:
+            pass
+        finally:
+            self._finished = True
+            if self.on_quit:
+                self.on_quit()
 
     def stop(self):
         self._stop_requested = True

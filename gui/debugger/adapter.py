@@ -43,6 +43,7 @@ class DebuggerAdapter:
         self.debugger.on_call = self.handle_call
         self.debugger.on_return = self.handle_return 
         self.debugger.on_exception = self.handle_exception
+        self.debugger.on_quit = self.handle_quit
 
         self.emit_state = None
 
@@ -68,6 +69,15 @@ class DebuggerAdapter:
             self.quit()
         else:
             print(f"[Debugger]: unknown command: {cmd}", flush=True)
+
+    def handle_quit(self):
+        state = {
+                    'type': 'state_update',
+                    'name': 'quit',
+                    'payload': {}
+                }
+        if self.emit_state:
+            self.emit_state(json.dumps(state))
 
     def get_state(self):
         payload = {

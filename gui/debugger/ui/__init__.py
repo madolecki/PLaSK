@@ -6,7 +6,6 @@ from ...qt.QtGui import QColor
 from ...utils.config import CONFIG
 import socket
 import json
-import struct
 import time
 from datetime import datetime
 
@@ -27,7 +26,7 @@ from .watched import WatchedPanel
 # debugger → ui
 # {
 #   type: state_update
-#   name: 'state_update'
+#   name: state_update | quit
 #   payload: {
 #     'line': ...
 #     'locals': ...
@@ -97,11 +96,16 @@ class PersistentSocketThread(QThread):
                 data = self.recv_json(self.socket)
                 if data:
                     try:
-                        data = json.loads(data).get("payload", {})
-                        self.line_received.emit(data.get("line", -1))
-                        self.vars_received.emit(data.get("locals", {}))
-                        self.stack_received.emit(data.get("call_stack", {}))
-                        self.watch_list_received.emit(data.get("watch_list", {}))
+                        data = json.loads(data)
+                        if data.get("name") == "state_update" and data.get("type") == "state_update":
+                            payload = data.get("payload", {})
+                            self.line_received.emit(payload.get("line", -1))
+                            self.vars_received.emit(payload.get("locals", {}))
+                            self.stack_received.emit(payload.get("call_stack", {}))
+                            self.watch_list_received.emit(payload.get("watch_list", {}))
+                        elif data.get("name") == "quit" and data.get("type") == "state_update":
+                            self.running = False
+                            break
                     except Exception as e:
                         self.error.emit(f"JSON decode error: {e}")
 
@@ -205,11 +209,10 @@ class DebuggerPanel(QDockWidget):
             }
         """)
 
-        layout.addWidget(self.splitter)
-
         layout.addLayout(config_layout)
         layout.addWidget(self.controls_widget)
         layout.addWidget(self.reconnect_button)
+        layout.addWidget(self.splitter)
         layout.setContentsMargins(4, 4, 4, 4)
 
         self.setWidget(container)
@@ -430,6 +433,11 @@ class DebuggerPanel(QDockWidget):
         self.reconnect_button.setVisible(False)
         self.reconnect_button.setEnabled(False)
 
+        self.controls_widget.setEnabled(True)
+        self.variables_widget.setEnabled(True)
+        self.call_stack_widget.setEnabled(True)
+        self.watched_widget.setEnabled(True)
+
         for btn in [
             self.controls_widget.continue_button,
             self.controls_widget.step_line_button,
@@ -464,7 +472,15 @@ class DebuggerPanel(QDockWidget):
         ]:
             btn.setEnabled(False)
 
+        self.controls_widget.setEnabled(False)
+        self.variables_widget.setEnabled(False)
+        self.call_stack_widget.setEnabled(False)
+        self.watched_widget.setEnabled(False)
+
         self.current_line_signal.emit(-1)
-        self.socket_thread.stop()
-        self.socket_thread = None
+        if self.socket_thread:
+            self.socket_thread.stop()
+            self.socket_thread.wait()
+            self.socket_thread.deleteLater()
+            self.socket_thread = None
 
