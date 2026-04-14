@@ -96,8 +96,7 @@ class VariablesPanel(QWidget):
             else:
                 return f"{spacer}{name}: {repr(value)}"
 
-    def update_vars(self, vars_data):
+    def update_vars(self, locals_dict):
         self.variables_panel.clear()
-        locals_dict = vars_data.get("locals", {})
         for key, value in locals_dict.items():
             self.add_variable_item(self.variables_panel, key, value)

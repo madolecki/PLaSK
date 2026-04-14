@@ -1,7 +1,4 @@
-import sys
-
 class StackManager:
-
     def __init__(self, dbg_path):
         self.stack = []
         self.dbg_path = dbg_path
@@ -9,47 +6,56 @@ class StackManager:
     def _frame_id(self, frame):
         return id(frame)
 
+    def _should_show_frame(self, frame):
+        if frame.f_code.co_name == "<module>":
+            return False
+
+        filename = frame.f_code.co_filename
+
+        if (
+            "site-packages" in filename or
+            "/usr/lib/" in filename or
+            "plask" in filename
+        ):
+            return False
+
+        return True
+
+    def _filter_locals(self, frame):
+        return {
+            k: v for k, v in frame.f_locals.items()
+            if not k.startswith("__")
+        }
+
     def _frame_info(self, frame):
         return {
             "id": self._frame_id(frame),
             "function": frame.f_code.co_name,
             "file": frame.f_code.co_filename,
             "line": frame.f_lineno,
-            "locals": frame.f_locals,
+            "locals": self._filter_locals(frame),
         }
-
-    def on_call(self, frame):
-        entry = self._frame_info(frame)
-        self.stack.append(entry)
-
-    def on_return(self, frame):
-        fid = self._frame_id(frame)
-
-        while self.stack:
-            top = self.stack[-1]
-            self.stack.pop()
-            if top["id"] == fid:
-                break
-
-    def on_line(self, frame):
-        if not self.stack:
-            return
-        fid = self._frame_id(frame)
-        top = self.stack[-1]
-        if top["id"] == fid:
-            top["line"] = frame.f_lineno
 
     def rebuild_from_frame(self, frame):
         new_stack = []
         f = frame
+
         while f is not None:
-            if self._frame_info(f)['function'] != '<module>':
-                new_stack.append(self._frame_info(f))
+            if self._should_show_frame(f):
+                info = self._frame_info(f)
+                new_stack.append(info)
+
             f = f.f_back
-            if self._frame_info(f)['file'] == self.dbg_path:
+
+            if f is None:
                 break
 
-        new_stack.pop(-1)
+            if f.f_code.co_filename == self.dbg_path:
+                break
+
+        if new_stack:
+            new_stack.pop(-1)
+
         new_stack.reverse()
         self.stack = new_stack
 

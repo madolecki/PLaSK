@@ -37,7 +37,7 @@ class LaunchThread(QThread):
         
         breakpoints = ",".join([f"{fname}:" + str(bp) for bp in breakpoints])
         port = CONFIG['launcher_debug/port']
-        debugger_path = "../../debugger/debugger.py"
+        debugger_path = "../../debugger/main.py"
 
         try:
             si = subprocess.STARTUPINFO()

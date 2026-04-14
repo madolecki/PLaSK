@@ -15,12 +15,32 @@ from .variables import VariablesPanel
 from .callstack import CallStackPanel
 from .watched import WatchedPanel
 
-
+# PROTOCOL 
+#
+# ui → debugger
+# {
+#   type: command
+#   name: <contiue | step_line | step_into | step_out | quit | update_watchlist>
+#   payload: {} 
+# }
+#
+# debugger → ui
+# {
+#   type: state_update
+#   name: 'state_update'
+#   payload: {
+#     'line': ...
+#     'locals': ...
+#     'call_stack': ...
+#     'watch_list': ...
+#   }
+# }
 class PersistentSocketThread(QThread):
     connected_ok = QtSignal()
     error = QtSignal(str)
     closed = QtSignal()
 
+    line_received = QtSignal(int)
     vars_received = QtSignal(dict)
     stack_received = QtSignal(list)
     watch_list_received = QtSignal(dict)
@@ -65,7 +85,6 @@ class PersistentSocketThread(QThread):
             return
 
         while self.running:
-            # Send queued commands
             if self.send_queue:
                 cmd = self.send_queue.pop(0)
                 try:
@@ -74,20 +93,15 @@ class PersistentSocketThread(QThread):
                     self.error.emit(f"Send error: {e}")
                     break
 
-            # Try receiving a JSON response
             try:
                 data = self.recv_json(self.socket)
                 if data:
                     try:
-                        vars_dict = json.loads(data)
-                        if "locals" in vars_dict:
-                            self.vars_received.emit(vars_dict)
-
-                        if "call_stack" in vars_dict:
-                            self.stack_received.emit(vars_dict["call_stack"])
-                        
-                        if "watch_list" in vars_dict:
-                            self.watch_list_received.emit(vars_dict["watch_list"])
+                        data = json.loads(data).get("payload", {})
+                        self.line_received.emit(data.get("line", -1))
+                        self.vars_received.emit(data.get("locals", {}))
+                        self.stack_received.emit(data.get("call_stack", {}))
+                        self.watch_list_received.emit(data.get("watch_list", {}))
                     except Exception as e:
                         self.error.emit(f"JSON decode error: {e}")
 
@@ -108,18 +122,23 @@ class PersistentSocketThread(QThread):
         self.closed.emit()
 
     def recv_json(self, sock):
-        def recv_all(sock, n):
-            data = b""
-            while len(data) < n:
-                packet = sock.recv(n - len(data))
-                if not packet:
-                    raise ConnectionError("Socket closed")
-                data += packet
-            return data
-        header = recv_all(sock, 4)
-        (length,) = struct.unpack("!I", header)
-        payload = recv_all(sock, length)
-        return json.loads(payload.decode("utf-8"))
+        if not hasattr(self, "_buffer"):
+            self._buffer = ""
+
+        try:
+            chunk = sock.recv(4096).decode("utf-8")
+            if not chunk:
+                return None
+            self._buffer += chunk
+
+            if "\n" in self._buffer:
+                line, self._buffer = self._buffer.split("\n", 1)
+                return line
+
+        except socket.timeout:
+            raise
+
+        return None
 
     def stop(self):
         self.running = False
@@ -206,7 +225,6 @@ class DebuggerPanel(QDockWidget):
         self.breakpoints = set()
 
     def _connect_signals(self):
-        # vars panel
         self.controls_widget.continue_clicked.connect(self.send_continue)
         self.controls_widget.step_line_clicked.connect(self.send_step_line)
         self.controls_widget.step_into_clicked.connect(self.send_step_into)
@@ -345,7 +363,7 @@ class DebuggerPanel(QDockWidget):
         self.socket_thread = PersistentSocketThread(host, port)
         self.socket_thread.connected_ok.connect(self.on_connected)
         self.socket_thread.vars_received.connect(self.variables_widget.update_vars)
-        self.socket_thread.vars_received.connect(self.update_current_showed_line)
+        self.socket_thread.line_received.connect(self.update_current_showed_line)
         self.socket_thread.error.connect(self.show_error)
         self.socket_thread.closed.connect(self.on_closed)
         self.socket_thread.stack_received.connect(self.call_stack_widget.update_call_stack)
@@ -353,24 +371,46 @@ class DebuggerPanel(QDockWidget):
         self.socket_thread.start()
 
     def send_continue(self):
-        self.send_cmd(b"CONTINUE\n")
+        cmd = {
+                'type': 'command',
+                'name': 'continue',
+                'payload': {}
+            }
+        self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
     
     def send_step_line(self):
-        self.send_cmd(b"NEXT_LINE\n")
+        cmd = {
+                'type': 'command',
+                'name': 'step_line',
+                'payload': {}
+            }
+        self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
 
     def send_step_into(self):
-        self.send_cmd(b"STEP_INTO\n")
+        cmd = {
+                'type': 'command',
+                'name': 'step_into',
+                'payload': {}
+            }
+        self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
 
     def send_step_out(self):
-        self.send_cmd(b"STEP_OUT\n")
+        cmd = {
+                'type': 'command',
+                'name': 'step_out',
+                'payload': {}
+            }
+        self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
 
     def send_watched_expressions(self, expressions):
-        list_str = json.dumps(expressions)
-        watched_str = f"WATCHED:{list_str}\n"
-        self.send_cmd(watched_str.encode('utf-8'))
+        cmd = {
+                'type': 'command',
+                'name': 'update_watchlist',
+                'payload': expressions
+            }
+        self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
 
-    def update_current_showed_line(self, vars_data):
-        line = int(vars_data["line"])
+    def update_current_showed_line(self, line):
         self.current_line_signal.emit(line)
 
     def send_cmd(self, cmd: bytes):
@@ -399,7 +439,7 @@ class DebuggerPanel(QDockWidget):
         ]:
             btn.setEnabled(True)
 
-        self.send_cmd(b"CONTINUE\n")
+        self.send_continue()
 
     def show_error(self, msg):
         self.add_panel_message(self.variables_widget.variables_panel, msg, "error")
