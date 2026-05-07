@@ -1,8 +1,8 @@
 import json
-from debugger import Debugger
-from stack_manager import StackManager
-from locals_manager import LocalsManager
-from watchlist_manager import WatchlistManager
+from .dbg import Debugger
+from .stack_manager import StackManager
+from .locals_manager import LocalsManager
+from .watchlist_manager import WatchlistManager
 
 import queue
 

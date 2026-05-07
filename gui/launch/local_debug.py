@@ -16,7 +16,7 @@
 import os
 import subprocess
 import sys
-import socket
+from pathlib import Path
 
 from .dock import OutputWindow
 from ..qt.QtCore import *
@@ -37,7 +37,8 @@ class LaunchThread(QThread):
         
         breakpoints = ",".join([f"{fname}:" + str(bp) for bp in breakpoints])
         port = CONFIG['launcher_debug/port']
-        debugger_path = "../../debugger/main.py"
+
+        plask_root = Path(__file__).resolve().parent.parent.parent
 
         try:
             si = subprocess.STARTUPINFO()
@@ -45,8 +46,8 @@ class LaunchThread(QThread):
             si.wShowWindow = subprocess.SW_HIDE
         except AttributeError:
             self.proc = subprocess.Popen(
-                [sys.executable, debugger_path, fname] + [breakpoints, "--port", str(port), "--work_dir", dirname],
-                cwd=dirname,
+                [sys.executable, "-m", "gui.debugger.main", fname] + [breakpoints, "--port", str(port), "--work_dir", dirname],
+                cwd=plask_root,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 env=env,

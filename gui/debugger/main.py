@@ -5,7 +5,7 @@ import socket
 import os
 
 import plask
-from adapter import DebuggerAdapter
+from .adapter import DebuggerAdapter
 
 def run_server(adapter, code, HOST, PORT):
     dbg_thread = None
