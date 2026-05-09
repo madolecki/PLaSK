@@ -7,7 +7,7 @@ import os
 import plask
 from .adapter import DebuggerAdapter
 
-def run_server(adapter, code, HOST, PORT):
+def run_server(adapter, code, HOST, PORT, env=None):
     dbg_thread = None
     conn = None
 
@@ -33,7 +33,7 @@ def run_server(adapter, code, HOST, PORT):
             adapter.emit_state = emit_state
 
             def run_dbg():
-                adapter.run(code)
+                adapter.run(code, env=env)
 
             dbg_thread = threading.Thread(target=run_dbg, daemon=True)
             dbg_thread.start()
@@ -84,6 +84,30 @@ def run_server(adapter, code, HOST, PORT):
 
     print("[DEBUGGER]: Successfully exited")
 
+def compile_xpl(source, manager, defs={}):
+    env = globals().copy()
+    env['plask'] = sys.modules["plask"]
+    env.update(defs)
+    plask.loadxpl(source, defs, destination=env)
+    if type(source) == str:
+        if not source.lstrip().startswith('<plask'):
+            filename = source
+        else:
+            filename = "<source>"
+    else:
+        try: filename = source.name
+        except: filename = "<source>"
+    env.update(env['__manager__'].defs)
+    try:
+        first_line = manager._scriptline
+        script = ("\n" * (first_line - 2)) + env['__script__']
+        code = compile(script, filename, 'exec')
+        return code, env
+    except Exception as exc:
+        ety, eva, etb = sys.exc_info()
+        plask._plask._print_exception(ety, eva, etb, filename, '<script>', env['__manager__']._scriptline)
+
+
 if __name__ == "__main__":
     PORT = None
     WORK_DIR = None
@@ -120,6 +144,7 @@ if __name__ == "__main__":
     manager.load(script_path)
     first_line = manager._scriptline
 
+    code, env = compile_xpl(script_path, manager, defs={})
     adapter = DebuggerAdapter(line_offset=first_line)
 
     # Parse breakpoints
@@ -134,10 +159,10 @@ if __name__ == "__main__":
     if WORK_DIR is not None:
         os.chdir(WORK_DIR)
 
-    code_str = "import plask\n" + ("\n" * (first_line - 2)) + manager.script
-    code = compile(code_str, script_path, "exec")
+    #code_str = "import plask\n" + ("\n" * (first_line - 2)) + manager.script
+    #code = compile(code_str, script_path, "exec")
     print("[DEBUGGER]: Loading and compilation finished", flush=True)
 
     HOST = "127.0.0.1"
 
-    run_server(adapter, code, HOST, PORT)
+    run_server(adapter, code, HOST, PORT, env=env)
