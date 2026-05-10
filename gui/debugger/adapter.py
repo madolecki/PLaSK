@@ -45,6 +45,7 @@ class DebuggerAdapter:
         self.debugger.on_quit = self.handle_quit
 
         self.emit_state = None
+        self.stop_event = None
 
         self.line_offset = line_offset
         self.current_line = -1
@@ -78,6 +79,9 @@ class DebuggerAdapter:
                 }
         if self.emit_state:
             self.emit_state(json.dumps(state))
+
+        if self.stop_event != None:
+            self.stop_event.set()
 
     def get_state(self):
         def ensure_serializable(x):

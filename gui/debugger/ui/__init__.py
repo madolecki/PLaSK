@@ -413,8 +413,13 @@ class DebuggerPanel(QDockWidget):
             }
         self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
 
-    def update_current_showed_line(self, line):
-        self.current_line_signal.emit(line)
+    def send_quit(self):
+        cmd = {
+                'type': 'command',
+                'name': 'quit',
+                'payload': {}
+            }
+        self.send_cmd((json.dumps(cmd)+"\n").encode('utf-8'))
 
     def send_cmd(self, cmd: bytes):
         if self.socket_thread and self.socket_thread.connected:
@@ -422,9 +427,14 @@ class DebuggerPanel(QDockWidget):
         else:
             self.add_panel_message(self.variables_widget.variables_panel, "Not connected", "warn")
 
+    def update_current_showed_line(self, line):
+        self.current_line_signal.emit(line)
+
     def stop_debugger(self):
         if self.socket_thread:
-            self.send_cmd(b"STOP\n")
+            self.send_quit()
+            import time 
+            time.sleep(0.5)
             self.socket_thread.stop()
 
     def on_connected(self):

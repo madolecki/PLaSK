@@ -9,6 +9,7 @@ from .adapter import DebuggerAdapter
 
 def run_server(adapter, code, HOST, PORT, env=None):
     conn = None
+    stop_event = threading.Event()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -28,6 +29,7 @@ def run_server(adapter, code, HOST, PORT, env=None):
                 pass
 
         adapter.emit_state = emit_state
+        adapter.stop_event = stop_event
 
         buffer = b""
 
@@ -36,7 +38,7 @@ def run_server(adapter, code, HOST, PORT, env=None):
 
         def socket_loop():
             nonlocal buffer
-            while True:
+            while not stop_event.is_set():
                 data = conn.recv(4096)
                 if not data:
                     break
@@ -54,6 +56,12 @@ def run_server(adapter, code, HOST, PORT, env=None):
         socket_thread.start()
 
         run_dbg()
+
+        stop_event.set()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     print("[DEBUGGER]: Successfully exited")
 
