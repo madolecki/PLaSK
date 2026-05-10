@@ -55,8 +55,8 @@ class LaunchThread(QThread):
             )
         else:
             self.proc = subprocess.Popen(
-                [sys.executable, debugger_path, fname] + breakpoints + [port_arg],
-                cwd=dirname,
+                [sys.executable, "-m", "gui.debugger.main", fname] + [breakpoints, "--port", str(port), "--work_dir", dirname],
+                cwd=plask_root,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 env=env,
