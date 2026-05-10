@@ -8,83 +8,56 @@ import plask
 from .adapter import DebuggerAdapter
 
 def run_server(adapter, code, HOST, PORT, env=None):
-    dbg_thread = None
     conn = None
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
         s.bind((HOST, PORT) if PORT is not None else (HOST, 0))
         s.listen()
 
         PORT = s.getsockname()[1]
         print(f"[DEBUGGER]: Started socket on: {HOST}:{PORT}", flush=True)
 
-        try:
-            conn, addr = s.accept()
-            print(f"[DEBUGGER]: Connected by {addr}", flush=True)
+        conn, addr = s.accept()
+        print(f"[DEBUGGER]: Connected by {addr}", flush=True)
 
-            def emit_state(state_json):
-                try:
-                    conn.sendall(state_json.encode("utf-8") + b"\n")
-                except OSError:
-                    pass
+        def emit_state(state_json):
+            try:
+                conn.sendall(state_json.encode("utf-8") + b"\n")
+            except OSError:
+                pass
 
-            adapter.emit_state = emit_state
+        adapter.emit_state = emit_state
 
-            def run_dbg():
-                adapter.run(code, env=env)
+        buffer = b""
 
-            dbg_thread = threading.Thread(target=run_dbg, daemon=True)
-            dbg_thread.start()
+        def run_dbg():
+            adapter.run(code, env=env)
 
-            buffer = b""
-
+        def socket_loop():
+            nonlocal buffer
             while True:
-                if dbg_thread and not dbg_thread.is_alive():
-                    print("[DEBUGGER]: Program finished, exiting.", flush=True)
-                    break
-
-                try:
-                    data = conn.recv(4096)
-                except ConnectionResetError:
-                    print("[DEBUGGER]: Connection reset by client.", flush=True)
-                    break
-                except OSError as e:
-                    print(f"[DEBUGGER]: Socket error: {e}", flush=True)
-                    break
-
+                data = conn.recv(4096)
                 if not data:
-                    print("[DEBUGGER]: Client disconnected.", flush=True)
                     break
-
                 buffer += data
 
                 while b"\n" in buffer:
                     line, buffer = buffer.split(b"\n", 1)
                     try:
                         cmd = json.loads(line.decode("utf-8"))
-                    except Exception as e:
-                        print(f"[DEBUGGER]: Invalid command: {e}", flush=True)
+                    except Exception:
                         continue
-
                     adapter.handle_command(cmd)
 
-        finally:
-            if dbg_thread and dbg_thread.is_alive():
-                adapter.quit()
-                dbg_thread.join(timeout=2)
+        socket_thread = threading.Thread(target=socket_loop, daemon=True)
+        socket_thread.start()
 
-            if conn:
-                try:
-                    conn.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
-                conn.close()
+        run_dbg()
 
     print("[DEBUGGER]: Successfully exited")
 
-def compile_xpl(source, manager, defs={}):
+def compile_xpl(source, first_line=0, defs={}):
     env = globals().copy()
     env['plask'] = sys.modules["plask"]
     env.update(defs)
@@ -99,8 +72,9 @@ def compile_xpl(source, manager, defs={}):
         except: filename = "<source>"
     env.update(env['__manager__'].defs)
     try:
-        first_line = manager._scriptline
         script = ("\n" * (first_line - 2)) + env['__script__']
+        with open("xpl_contents", "w") as f:
+            f.write(str(script))
         code = compile(script, filename, 'exec')
         return code, env
     except Exception as exc:
@@ -144,7 +118,7 @@ if __name__ == "__main__":
     manager.load(script_path)
     first_line = manager._scriptline
 
-    code, env = compile_xpl(script_path, manager, defs={})
+    code, env = compile_xpl(script_path, first_line=first_line, defs={})
     adapter = DebuggerAdapter(line_offset=first_line)
 
     # Parse breakpoints
@@ -159,8 +133,6 @@ if __name__ == "__main__":
     if WORK_DIR is not None:
         os.chdir(WORK_DIR)
 
-    #code_str = "import plask\n" + ("\n" * (first_line - 2)) + manager.script
-    #code = compile(code_str, script_path, "exec")
     print("[DEBUGGER]: Loading and compilation finished", flush=True)
 
     HOST = "127.0.0.1"
