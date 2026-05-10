@@ -2,6 +2,8 @@ from ...qt.QtWidgets import *
 from ...qt import QtSignal
 from ...qt.QtGui import QIcon
 
+from pathlib import Path
+
 class DebugControls(QWidget):
     continue_clicked = QtSignal()
     step_line_clicked = QtSignal()
@@ -14,26 +16,36 @@ class DebugControls(QWidget):
         button_layout = QHBoxLayout(self)
         style = self.style()
 
+
+        BASE_DIR = Path(__file__).resolve().parent
+        ICONS_DIR = BASE_DIR / "icons"
+
+        #pause_icon = ICONS_DIR / "pause.svg"
+        play_icon = str(ICONS_DIR / "play.svg")
+        step_icon = str(ICONS_DIR / "step.svg")
+        step_in_icon = str(ICONS_DIR / "step_in.svg")
+        step_out_icon = str(ICONS_DIR / "step_out.svg")
+
         self.continue_button = QPushButton()
-        self.continue_button.setIcon(QIcon("gui/debugger/ui/icons/play.svg"))
+        self.continue_button.setIcon(QIcon(play_icon))
         self.continue_button.clicked.connect(self.continue_clicked)
         self.continue_button.setEnabled(False)
         self.continue_button.setToolTip("Continue execution until the next breakpoint.")
 
         self.step_line_button = QPushButton()
-        self.step_line_button.setIcon(QIcon("gui/debugger/ui/icons/step.svg"))
+        self.step_line_button.setIcon(QIcon(step_icon))
         self.step_line_button.clicked.connect(self.step_line_clicked)
         self.step_line_button.setEnabled(False)
         self.step_line_button.setToolTip("Execute the next line of code.")
 
         self.step_into_button = QPushButton()
-        self.step_into_button.setIcon(QIcon("gui/debugger/ui/icons/step_in.svg"))
+        self.step_into_button.setIcon(QIcon(step_in_icon))
         self.step_into_button.clicked.connect(self.step_into_clicked)
         self.step_into_button.setEnabled(False)
         self.step_into_button.setToolTip("Step into the next function call.")
 
         self.step_out_button = QPushButton()
-        self.step_out_button.setIcon(QIcon("gui/debugger/ui/icons/step_out.svg"))
+        self.step_out_button.setIcon(QIcon(step_out_icon))
         self.step_out_button.clicked.connect(self.step_out_clicked)
         self.step_out_button.setEnabled(False)
         self.step_out_button.setToolTip("Step out of the current function.")
