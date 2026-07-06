@@ -39,13 +39,10 @@ _i = sys.path.index(_plask_python_path) if _plask_python_path in sys.path else 0
 
 if os.name == 'nt':
     os.add_dll_directory(os.path.join(PREFIX_PATH, 'bin'))
+    os.environ['PATH'] = os.path.join(PREFIX_PATH, 'bin') + ';' + os.environ['PATH']
 
-try:
-    from . import _plask
-    from ._plask import *
-except ImportError:  # this seems necessary for Python 3.4
-    import _plask
-    from _plask import *
+from . import _plask
+from ._plask import *
 
 try: from ._plask import _print_stack # for debug only
 except ImportError: pass
@@ -281,8 +278,6 @@ class StepProfile:
             to the step-profile items.
         default: Default value of the provided field, returned in all non-referenced
             geometry objects.
-        dtype: Type of the returned value. Defaults to `None`, in which case it is
-            determined by the type of `default`.
 
     After creation, set the desired values at chosen geometry objects using item
     access [] notation:
@@ -326,11 +321,10 @@ class StepProfile:
 
     """
 
-    def __init__(self, geometry, default=0., dtype=None):
+    def __init__(self, geometry, default=0.):
         self.steps = {}
         self._geometry = geometry
         self._default = default
-        self.dtype = dtype if dtype is not None else float if type(default) is int else type(default)
         self.providers = _weakref.WeakValueDictionary()
 
     def _fix_key(self, key):
@@ -367,7 +361,9 @@ class StepProfile:
     def __call__(self, mesh, *args):
         if not isinstance(mesh, _plask.mesh.Mesh) and len(args):
             mesh = args[0]
-        result = ones(len(mesh), self.dtype) * self._default
+        default = array(self._default)
+        shape = (len(mesh),) + default.shape
+        result = repeat(default, shape[0]).reshape(shape)
         for xobj,val in self.steps.items():
             obj, pth = xobj if type(xobj) is tuple else (xobj, None)
             if pth is not None: pth = geometry.PathHints(pth)

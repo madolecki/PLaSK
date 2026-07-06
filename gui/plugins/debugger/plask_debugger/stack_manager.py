@@ -1,7 +1,9 @@
 import json
-from collections.abc import Mapping, Iterable
+from collections.abc import Mapping
+
 
 class StackManager:
+
     def __init__(self, dbg_path):
         self.ignored_vars = None
         self.stack = []
@@ -17,6 +19,7 @@ class StackManager:
         return True
 
     def _filter_frame_locals(self, frame):
+
         def safe_repr(obj):
             try:
                 return repr(obj)
@@ -28,10 +31,7 @@ class StackManager:
                 json.dumps(value)
                 return value
             except Exception:
-                return {
-                    "__type__": safe_repr(type(value)),
-                    "__repr__": safe_repr(value)
-                }
+                return {"__type__": safe_repr(type(value)), "__repr__": safe_repr(value)}
 
         def sanitize(obj, seen=None):
             if seen is None:
@@ -71,10 +71,7 @@ class StackManager:
         if self.ignored_vars == None:
             self.ignored_vars = {}
 
-        local_vars = {
-            k: v for k, v in frame.f_locals.items()
-            if k not in self.ignored_vars
-        }
+        local_vars = {k: v for k, v in frame.f_locals.items() if k not in self.ignored_vars}
 
         return sanitize(local_vars)
 
@@ -112,4 +109,4 @@ class StackManager:
         self.stack = new_stack
 
     def get_stack(self):
-        return list(self.stack)
+        return list(self.stack)[1:]  # Exclude the first frame which is the debugger itself

@@ -1,8 +1,6 @@
-from ...qt.QtWidgets import *
-from ...qt import QtSignal
-from ...qt.QtGui import QIcon
-
-from pathlib import Path
+from gui.qt.QtWidgets import *
+from gui.qt import QtSignal
+from gui.qt.QtGui import QIcon
 
 class DebugControls(QWidget):
     continue_clicked = QtSignal()
@@ -16,45 +14,35 @@ class DebugControls(QWidget):
         button_layout = QHBoxLayout(self)
         style = self.style()
 
-
-        BASE_DIR = Path(__file__).resolve().parent
-        ICONS_DIR = BASE_DIR / "icons"
-
-        #pause_icon = ICONS_DIR / "pause.svg"
-        play_icon = str(ICONS_DIR / "play.svg")
-        step_icon = str(ICONS_DIR / "step.svg")
-        step_in_icon = str(ICONS_DIR / "step_in.svg")
-        step_out_icon = str(ICONS_DIR / "step_out.svg")
-
         self.continue_button = QPushButton()
-        self.continue_button.setIcon(QIcon(play_icon))
+        self.continue_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.continue_button.clicked.connect(self.continue_clicked)
         self.continue_button.setEnabled(False)
-        self.continue_button.setToolTip("Continue execution until the next breakpoint.")
+        self.continue_button.setToolTip("Continue execution until the next breakpoint")
 
         self.step_line_button = QPushButton()
-        self.step_line_button.setIcon(QIcon(step_icon))
+        self.step_line_button.setIcon(QIcon.fromTheme("debug-step-over"))
         self.step_line_button.clicked.connect(self.step_line_clicked)
         self.step_line_button.setEnabled(False)
-        self.step_line_button.setToolTip("Execute the next line of code.")
+        self.step_line_button.setToolTip("Execute the next line of code")
 
         self.step_into_button = QPushButton()
-        self.step_into_button.setIcon(QIcon(step_in_icon))
+        self.step_into_button.setIcon(QIcon.fromTheme("debug-step-into"))
         self.step_into_button.clicked.connect(self.step_into_clicked)
         self.step_into_button.setEnabled(False)
-        self.step_into_button.setToolTip("Step into the next function call.")
+        self.step_into_button.setToolTip("Step into the next function call")
 
         self.step_out_button = QPushButton()
-        self.step_out_button.setIcon(QIcon(step_out_icon))
+        self.step_out_button.setIcon(QIcon.fromTheme("debug-step-out"))
         self.step_out_button.clicked.connect(self.step_out_clicked)
         self.step_out_button.setEnabled(False)
-        self.step_out_button.setToolTip("Step out of the current function.")
+        self.step_out_button.setToolTip("Step out of the current function")
 
         self.stop_button = QPushButton()
-        self.stop_button.setIcon(style.standardIcon(QStyle.SP_MediaStop))
+        self.stop_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaStop))
         self.stop_button.clicked.connect(self.stop_clicked)
         self.stop_button.setEnabled(False)
-        self.stop_button.setToolTip("Stop the debugger and disconnect from the program.")
+        self.stop_button.setToolTip("Stop the debugger and disconnect from the program")
 
         # Add buttons to layout
         for btn in [

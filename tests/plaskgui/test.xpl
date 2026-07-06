@@ -637,6 +637,11 @@ dictionary = {
 
 import module
 
+match = 2
+match match:
+    case 1: print(1)
+    case 2: print(2)
+
 csys = 1
 cmap = 2
 
@@ -645,6 +650,37 @@ print(f"""csys = {csys:03d}, cmap = {{{ {1: 'c', 2: 'a'}[cmap] }}}, function: {(
 print_log('info', "START")
 
 print_log('data', os.environ.get('DISPLAY'))
+
+
+class A:
+    def __init__(self):
+        pass
+
+    val = property()
+    """
+    ppp
+    """
+
+    @property
+    def prop(self):
+        """
+        Prop
+        :rtype: RootParams
+        """
+        return 0xff
+
+    def fun(self):
+        """
+        Fun fun fun
+        :rtype: RootParams
+        """
+        pass
+
+
+a = A()
+a.prop
+a.fun()
+
 
 figure()
 xx = linspace(0., 12., 1001)
@@ -683,35 +719,6 @@ print_log('info', "informacja")
 # OPTICAL.find_mode
 
 print(f, file=sys.stderr)
-
-class A:
-
-    def __init__(self):
-        pass
-
-    val = property()
-    """
-    ppp
-    """
-
-    @property
-    def prop(self):
-        """
-        Prop
-        :rtype: RootParams
-        """
-        return 0xff
-
-    def fun(self):
-        """
-        Fun fun fun
-        :rtype: RootParams
-        """
-        pass
-
-a = A()
-a.prop
-a.fun()
 
 config.axes = 'rz'
 
