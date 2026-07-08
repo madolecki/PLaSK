@@ -41,34 +41,65 @@ def _setup_matplotlib(backend):
 QT_API = os.environ.get('PLASK_QT_API', os.environ.get('QT_API'))
 
 if QT_API is not None:
-    QT_API = dict(pyqt5='PyQt5', pyside2='PySide2', pyqt6='PyQt6', pyside6='PySide6').get(QT_API)
+    QT_API = dict(pyqt5='PyQt5', pyside2='PySide2', pyqt6='PyQt6', pyside6='PySide6').get(QT_API.lower())
     if QT_API is None:
         import warnings
         warnings.warn("Ignoring unknown QT_API environmental variable!")
 
-for QT_API in (QT_API, 'PySide2', 'PyQt5', 'PySide6', 'PyQt6'):
-    if QT_API is None or not _setup_matplotlib(QT_API):
+if QT_API is None:
+    try:
+        import matplotlib
+
+        matplotlib.use('QtAgg')
+
+        from matplotlib.backends import qt_compat
+        
+        QT_API = dict(pyqt5='PyQt5', pyside2='PySide2', pyqt6='PyQt6', pyside6='PySide6').get(str(qt_compat.QT_API).lower())
+    except (ImportError, AttributeError):
+        pass
+
+search_order = [QT_API] if QT_API else ['PyQt6', 'PySide6', 'PyQt5', 'PySide2']
+
+for cand_api in search_order:
+    if cand_api is None:
         continue
-    elif QT_API == 'PyQt6':
+    elif cand_api == 'PyQt6':
         try: from PyQt6 import QtCore, QtWidgets, QtGui, QtHelp
-        except ImportError:
+        except ImportError as e:
+            print(f"PyQt6 import failed with error: {e}")
             if 'PyQt6' in sys.modules: del sys.modules['PyQt6']
-        else: break
-    elif QT_API == 'PySide6':
+        else: 
+            if _setup_matplotlib(cand_api):
+                QT_API = cand_api
+                break
+    elif cand_api == 'PySide6':
         try: from PySide6 import QtCore, QtWidgets, QtGui, QtHelp
-        except ImportError:
+        except ImportError as e:
+            print(f"PySide6 import failed with error: {e}")
             if 'PySide6' in sys.modules: del sys.modules['PySide6']
-        else: break
-    elif QT_API == 'PyQt5':
-        try: from PyQt5 import QtCore, QtWidgets, QtGui, QtHelp
-        except ImportError:
-            del sys.modules['PyQt5']
-        else: break
+        else:
+            if _setup_matplotlib(cand_api):
+                QT_API = cand_api
+                break
+    elif cand_api == 'PyQt5':
+        try: 
+            from PyQt5 import QtCore, QtWidgets, QtGui, QtHelp
+        except ImportError as e:
+            print(f"PyQt5 import failed with error: {e}")
+            if 'PyQt5' in sys.modules: del sys.modules['PyQt5']
+        else:
+            if _setup_matplotlib(cand_api):
+                QT_API = cand_api
+                break
     else:  # QT_API == 'PySide2':
         try: from PySide2 import QtCore, QtWidgets, QtGui, QtHelp
-        except ImportError:
+        except ImportError as e:
+            print(f"PySide2 import failed with error: {e}")
             if 'PySide2' in sys.modules: del sys.modules['PySide2']
-        else: break
+        else:
+            if _setup_matplotlib(cand_api):
+                QT_API = cand_api
+                break
 
 if QT_API in ('PyQt5', 'PyQt6'):
     QtSignal = QtCore.pyqtSignal
