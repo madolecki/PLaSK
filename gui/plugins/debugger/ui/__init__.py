@@ -41,7 +41,7 @@ class PersistentSocketThread(QThread):
     closed = QtSignal()
 
     line_received = QtSignal(int)
-    vars_received = QtSignal(dict)
+    vars_received = QtSignal(list)
     stack_received = QtSignal(list)
     watch_list_received = QtSignal(dict)
 
