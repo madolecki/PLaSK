@@ -242,8 +242,6 @@ class DebuggerPanel(QDockWidget):
         def __init__(self, title: str, content: QWidget):
             super().__init__()
 
-            self._saved_size = None
-
             self.toggle_btn = QPushButton(f"▼ {title}")
             self.toggle_btn.setCheckable(True)
             self.toggle_btn.setChecked(True)
@@ -269,6 +267,10 @@ class DebuggerPanel(QDockWidget):
             layout.addWidget(self.toggle_btn)
             layout.addWidget(self.content)
 
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+            
+            self._saved_sizes = None 
+
             self.toggle_btn.toggled.connect(self.on_toggle)
 
         def on_toggle(self, checked):
@@ -276,57 +278,22 @@ class DebuggerPanel(QDockWidget):
             self.toggle_btn.setText(("▼ " if checked else "▶ ") + title)
 
             splitter = self.parentWidget()
+            is_in_splitter = isinstance(splitter, QSplitter)
 
-            if not isinstance(splitter, QSplitter):
-                self.content.setVisible(checked)
-                return
+            if not checked:
+                if is_in_splitter:
+                    self._saved_sizes = splitter.sizes()
 
-            widgets = [splitter.widget(i) for i in range(splitter.count())]
-            sizes = splitter.sizes()
+                self.content.setVisible(False)
+                self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            else:
+                self.content.setVisible(True)
+                self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
-            size_map = dict(zip(widgets, sizes))
+                if is_in_splitter and self._saved_sizes:
+                    QApplication.processEvents() 
+                    splitter.setSizes(self._saved_sizes)
 
-            collapsed_height = self.toggle_btn.sizeHint().height()
-
-            expanded = []
-            collapsed = []
-
-            for w in widgets:
-                if isinstance(w, DebuggerPanel.CollapsibleSection):
-                    if w.toggle_btn.isChecked():
-                        expanded.append(w)
-                    else:
-                        collapsed.append(w)
-
-            total_size = sum(sizes)
-
-            collapsed_total = len(collapsed) * collapsed_height
-            remaining = max(0, total_size - collapsed_total)
-
-            expanded_sizes = [size_map[w] for w in expanded]
-            expanded_total = sum(expanded_sizes)
-
-            new_sizes = []
-
-            for w in widgets:
-                if w in collapsed:
-                    new_sizes.append(collapsed_height)
-                else:
-                    if expanded_total > 0:
-                        proportion = size_map[w] / expanded_total
-                        new_sizes.append(int(proportion * remaining))
-                    else:
-                        new_sizes.append(remaining // max(1, len(expanded)))
-
-            MIN_EXPANDED = 80
-
-            for i, w in enumerate(widgets):
-                if w in expanded:
-                    new_sizes[i] = max(new_sizes[i], MIN_EXPANDED)
-
-            splitter.setSizes(new_sizes)
-
-            self.content.setVisible(checked)
             self.toggled.emit()
 
     def add_panel_message(self, panel, text, msg_type="info"):
