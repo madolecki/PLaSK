@@ -118,6 +118,18 @@ class DebuggerPythonEditor(PythonEditor):
         self.debug_lines = set([line])
         self.update_selections()
 
+        # Jump view to the highlighted line
+        if line > 0:
+            block = self.document().findBlockByNumber(line - 1)
+            if block.isValid():
+                cursor = QTextCursor(block)
+                self.setTextCursor(cursor)
+                
+                self.ensureCursorVisible()
+                
+                # Centers the view on the highlighted line
+                self.centerCursor()
+
     def update_selections(self, selections=None):
         """Add our own custom selections"""
         if selections is not None:
