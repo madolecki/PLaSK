@@ -3,6 +3,7 @@ import sys
 import threading
 import socket
 import os
+import ctypes
 
 import plask
 
@@ -77,6 +78,31 @@ def run_server(adapter, host, port):
             if running:
                 adapter.quit()
 
+# Workaround for correct plask logging
+def patch_root_frame_filename(target_filename):
+    root_frame = sys._getframe()
+    while root_frame.f_back:
+        root_frame = root_frame.f_back
+
+    code_obj = root_frame.f_code
+    old_filename_obj = code_obj.co_filename
+    old_ptr = id(old_filename_obj)
+
+    new_filename_str = str(target_filename)
+    new_ptr = id(new_filename_str)
+
+    if old_ptr == new_ptr:
+        return
+
+    code_address = id(code_obj)
+    ptr_size = ctypes.sizeof(ctypes.c_void_p)
+
+    for offset in range(16, 300, ptr_size):
+        val = ctypes.c_void_p.from_address(code_address + offset).value
+        if val == old_ptr:
+            ctypes.pythonapi.Py_IncRef(ctypes.py_object(new_filename_str))
+            ctypes.c_void_p.from_address(code_address + offset).value = new_ptr
+            break
 
 if __name__ == "__main__":
     PORT = None
@@ -131,10 +157,11 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    script_path = sys.argv[1]
+    script_path = os.path.abspath(sys.argv[1])
     sys.argv.pop(0) # Remove the debugger script from arguments, leaving only the target script and its args
 
     sys.path[0] = os.path.dirname(script_path) # Ensure the script's directory is in the path for imports, not the debugger's one
+    patch_root_frame_filename(script_path)
 
     manager = plask.Manager()
     if script_path.endswith('.py'):
@@ -148,6 +175,12 @@ if __name__ == "__main__":
     env = manager._globals
     manager.export(env)
     env.update(defines)
+
+    env.update({
+        '__name__': '__main__',
+        '__file__': script_path,
+        '__builtins__': __builtins__
+    })
 
     adapter = DebuggerAdapter(line_offset=first_line)
 
