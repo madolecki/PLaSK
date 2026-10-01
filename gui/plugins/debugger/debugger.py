@@ -8,6 +8,7 @@ import ctypes
 import plask
 
 from plask_debugger.adapter import DebuggerAdapter
+from plask_debugger.utils import resolve_line
 
 running = True
 
@@ -184,17 +185,21 @@ if __name__ == "__main__":
 
     adapter = DebuggerAdapter(line_offset=first_line)
 
+
+    code = compile(code_str, script_path, "exec")
+    plask.print_log('debug', "[DEBUGGER]: Loading and compilation finished")
+
     # Parse breakpoints
     for bp in breakpoints.split(","):
         if bp.strip():
             try:
                 bp_file, bp_line = bp.rsplit(":", 1)
-                adapter.debugger.set_break(bp_file.strip(), int(bp_line))
+                requested_line = int(bp_line)
+                # snap to the next executable line
+                actual_line = resolve_line(code, requested_line)
+                adapter.debugger.set_break(bp_file.strip(), int(actual_line))
             except ValueError:
                 plask.print_log('warning', f"Invalid breakpoint format: {bp}")
-
-    code = compile(code_str, script_path, "exec")
-    plask.print_log('debug', "[DEBUGGER]: Loading and compilation finished")
 
     HOST = "127.0.0.1"
 
