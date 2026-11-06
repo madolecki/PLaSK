@@ -63,6 +63,7 @@ set(SOLVER_LINK_LIBRARIES ${LAPACK_LIBRARIES} nspcg)
 #
 enable_testing()
 add_solver_test(therm ${CMAKE_CURRENT_SOURCE_DIR}/tests/therm.py)
+add_solver_test(therm_triangle ${CMAKE_CURRENT_SOURCE_DIR}/tests/therm_triangle.py)
 
 #file(GLOB_RECURSE femtest_src FOLLOW_SYMLINKS tests/*.cpp tests/*.h)
 #add_executable(femtest ${femtest_src})

@@ -101,6 +101,9 @@ void register_mesh_triangular() {
     {
         py::scope scope = triangularMesh2D;
         (void)scope;  // don't warn about unused variable scope
+  
+        py::class_<TriangularMesh2D::Boundary>(
+            "Boundary", u8"Boundary specification for :py:class:`mesh.Triangular2D`", py::no_init);
 
         py::class_<TriangularMesh2D::Element>(
             "Element", u8"Element (FEM-like, triangle) of the :py:class:`mesh.Triangular2D`", py::no_init)

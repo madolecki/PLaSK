@@ -20,6 +20,7 @@ using namespace plask::python;
 
 #include "../therm2d.hpp"
 #include "../therm3d.hpp"
+#include "../therm2d_triangle.hpp"
 using namespace plask::thermal::tstatic;
 
 namespace plask { namespace thermal { namespace tstatic {
@@ -148,5 +149,21 @@ BOOST_PYTHON_MODULE(static)
         RW_FIELD(inittemp, u8"Initial temperature");
         RW_FIELD(maxerr, u8"Limit for the temperature updates");
         registerFemSolverWithMaskedMesh(solver);
+    }
+    {CLASS(ThermalFem2DTriangleSolver, "Static2DTriangle",
+        u8"Finite element thermal solver for 2D Cartesian geometry using triangular elements.")
+        METHOD(compute, compute, u8"Run thermal calculations", py::arg("loops")=1);
+        RO_PROPERTY(err, getErr, u8"Maximum estimated error");
+        RECEIVER(inHeat, "");
+        PROVIDER(outTemperature, "");
+        PROVIDER(outHeatFlux, "");
+        PROVIDER(outThermalConductivity, "");
+        BOUNDARY_CONDITIONS(temperature_boundary, u8"Boundary conditions for the constant temperature");
+        BOUNDARY_CONDITIONS(heatflux_boundary, u8"Boundary conditions for the constant heat flux");
+        BOUNDARY_CONDITIONS(convection_boundary, u8"Convective boundary conditions");
+        BOUNDARY_CONDITIONS(radiation_boundary, u8"Radiative boundary conditions");
+        RW_FIELD(inittemp, u8"Initial temperature");
+        RW_FIELD(maxerr, u8"Limit for the temperature updates");
+        registerFemSolver(solver);
     }
 }
